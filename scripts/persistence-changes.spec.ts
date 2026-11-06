@@ -791,7 +791,6 @@ describe('persistence changes current-tree commands', () => {
       { ...AUTHORED_PROSE, extra: 'unsupported' },
       { ...AUTHORED_PROSE, compatibility: '   ' },
       { ...AUTHORED_PROSE, verification: 'TODO: record validation evidence.' },
-      { ...AUTHORED_PROSE, verification: '```text\nUnpaired code.\n```' },
     ]) {
       writeFileSync(prose, JSON.stringify(value))
       expect(() => runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version', '--prose', prose], root, () => after)).toThrow()

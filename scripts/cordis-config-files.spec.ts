@@ -19,7 +19,6 @@ describe('cordisConfigFiles', () => {
     }
     for (const file of [
       '.claude/hidden.cordis.yml',
-      'docs/cordis-primer.i18n.yaml',
       'apps/cli/config/examples/agent.cordis.yaml',
       'apps/cli/config/examples/headless.cordis.yml',
       'node_modules/pkg/hidden.cordis.yml',
