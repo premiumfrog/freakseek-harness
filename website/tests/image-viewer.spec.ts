@@ -21,7 +21,6 @@ function controller(scale: number) {
 let viewer: ImageViewer | undefined
 let mermaid: MermaidViewer | undefined
 let media: MediaViewer
-let language = 'en-US'
 let overflow: string
 const controllers: ReturnType<typeof controller>[] = []
 const disconnects: ReturnType<typeof vi.fn>[] = []
@@ -35,7 +34,6 @@ beforeEach(() => {
     controllers.push(instance)
     return instance
   })
-  language = 'en-US'
   overflow = document.body.style.overflow
   document.body.innerHTML = '<main id="VPContent" class="vp-doc"></main>'
   document.body.style.overflow = 'auto'
@@ -55,7 +53,7 @@ beforeEach(() => {
     constructor() { disconnects.push(this.disconnect) }
     observe(): void {}
   })
-  media = new MediaViewer(document, () => language)
+  media = new MediaViewer(document)
 })
 
 afterEach(() => {
@@ -101,7 +99,7 @@ function render(complete = true) {
 }
 
 function install(): ImageViewer {
-  viewer = new ImageViewer(document, () => language, media)
+  viewer = new ImageViewer(document, media)
   return viewer
 }
 
@@ -165,16 +163,12 @@ describe('documentation image viewer', () => {
     expect(queryAllByRole(root, 'button')).toHaveLength(0)
   })
 
-  it.each([
-    { locale: 'en-US', title: 'DeepSeek API settings', name: 'View image fullscreen: DeepSeek API settings', trigger: 'image' },
-    { locale: 'zh-CN', title: 'DeepSeek API 配置', name: '全屏查看图片：DeepSeek API 配置', trigger: 'button' },
-  ])('opens the loaded image with accessible controls in $locale', async ({ locale, title, name, trigger }) => {
+  it.each(['image', 'button'])('opens the loaded image with accessible controls from its %s', async (trigger) => {
+    const title = 'DeepSeek API settings'
     const { image, state } = render()
-    language = locale
-    image.alt = title
     state.currentSrc = 'https://docs.example/provider@2x.png'
     install()
-    const button = getByRole(document.body, 'button', { name })
+    const button = entry()
     expect(button.getAttribute('aria-haspopup')).toBe('dialog')
     if (trigger === 'image') image.click()
     else button.click()
@@ -189,7 +183,7 @@ describe('documentation image viewer', () => {
     expect(panzoom.create.mock.calls[0]?.[1]).toMatchObject({ startScale: 0.625, minScale: 0.3125 })
     expect(document.body.style.overflow).toBe('hidden')
     await expect(`${button.outerHTML}\n${dialog.outerHTML}\n${clone.outerHTML}\n`)
-      .toMatchFileSnapshot(`./expected/image-viewer.${locale}.html`)
+      .toMatchFileSnapshot('./expected/image-viewer.html')
     dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
     expect(queryByRole(document.body, 'dialog')).toBeNull()
     expect(document.activeElement).toBe(button)
@@ -229,7 +223,7 @@ describe('documentation image viewer', () => {
     render()
     required(document.querySelector('main')).insertAdjacentHTML('beforeend', '<div class="mermaid"><svg viewBox="0 0 2000 3000"></svg></div>')
     install()
-    mermaid = installMermaidViewer(document, () => language, media)
+    mermaid = installMermaidViewer(document, media)
     const imageTrigger = entry()
     const diagramTrigger = getByRole(document.body, 'button', { name: 'View diagram fullscreen' })
     const [oldTrigger, newTrigger] = first === 'image' ? [imageTrigger, diagramTrigger] : [diagramTrigger, imageTrigger]
@@ -327,15 +321,14 @@ describe('documentation image viewer', () => {
     expect(required(controllers[0]).destroy).toHaveBeenCalledOnce()
   })
 
-  it('refreshes localized entry names and stops enhancing new and delayed images after disposal', async () => {
+  it('refreshes entry names and stops enhancing new and delayed images after disposal', async () => {
     const ready = render()
     const pending = render(false)
     install()
     const trigger = entry()
-    language = 'zh-CN'
-    ready.image.alt = 'API 配置'
+    ready.image.alt = 'API settings'
     required(viewer).refresh()
-    expect(getByRole(document.body, 'button', { name: '全屏查看图片：API 配置' })).toBe(trigger)
+    expect(getByRole(document.body, 'button', { name: 'View image fullscreen: API settings' })).toBe(trigger)
     required(viewer).dispose()
     pending.state.complete = true
     pending.image.dispatchEvent(new Event('load'))
