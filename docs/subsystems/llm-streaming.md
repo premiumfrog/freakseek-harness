@@ -1185,6 +1185,36 @@ Types: [FileAttachmentRef](attachment.md) · [ImageAttachmentRef](attachment.md)
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxlocalmodels--localmodelsservice"></a>
+
+### `ctx.localModels` — `LocalModelsService`
+
+Remote service over one plugin instance's LocalModelRuntime.
+
+```ts cordis-catalog
+/**
+ * Rescan model directories and report the catalog with the engine state.
+ * @returns the current snapshot.
+ */
+@Remote('snapshot') async snapshot(): Promise<LocalModelsSnapshot>
+
+/**
+ * Load one catalog model into memory, replacing the loaded one, and make it
+ * the default model of new conversations when the deployment has one.
+ * @param modelId - catalog model id.
+ * @returns the snapshot after loading, or the failure reason.
+ */
+@Remote('load') async load(modelId: string): Promise<LocalModelsActionResult>
+
+/**
+ * Release the loaded model's memory.
+ * @returns the snapshot after unloading, or the failure reason.
+ */
+@Remote('unload') async unload(): Promise<LocalModelsActionResult>
+```
+
+Source: [`packages/llm/llm-local-gguf/src/service.ts`](../../packages/llm/llm-local-gguf/src/service.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events

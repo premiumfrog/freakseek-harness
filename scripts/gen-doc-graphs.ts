@@ -288,9 +288,17 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'llm',
     title: 'LLM adapter registry',
     mode: 'seam',
-    implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-replay'],
+    implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-local-gguf', 'llm-replay'],
     consumers: ['agent-loop', 'compaction-basic'],
     note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
+  },
+  {
+    key: 'localModels',
+    pkg: 'llm-local-gguf',
+    title: 'Local GGUF model catalog and engine state',
+    mode: 'core',
+    consumers: ['ui-settings-local-models'],
+    note: 'Lists local GGUF files and loads or unloads them in the offline engine process; the `local` LLM route streams through the same runtime.',
   },
   {
     key: 'sessionLogDeepSeek',

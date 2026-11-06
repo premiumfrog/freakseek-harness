@@ -2021,6 +2021,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'localModels',
+    summary: 'Remote service over one plugin instance\'s LocalModelRuntime.',
+    description: 'Remote service over one plugin instance\'s LocalModelRuntime.',
+    methods: [
+      {
+        signature: '@Remote(\'snapshot\') async snapshot(): Promise<LocalModelsSnapshot>',
+        description: 'Rescan model directories and report the catalog with the engine state.',
+        parameters: [],
+        returns: 'the current snapshot.',
+      },
+      {
+        signature: '@Remote(\'load\') async load(modelId: string): Promise<LocalModelsActionResult>',
+        description: 'Load one catalog model into memory, replacing the loaded one, and make it the default model of new conversations when the deployment has one.',
+        parameters: [{ name: 'modelId', description: 'catalog model id.' }],
+        returns: 'the snapshot after loading, or the failure reason.',
+      },
+      {
+        signature: '@Remote(\'unload\') async unload(): Promise<LocalModelsActionResult>',
+        description: 'Release the loaded model\'s memory.',
+        parameters: [],
+        returns: 'the snapshot after unloading, or the failure reason.',
+      },
+    ],
+  },
+  {
     key: 'lsp',
     summary: 'The LSP capability seam (`ctx.lsp`).',
     description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
@@ -7042,6 +7067,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalizedText',
     declaration: 'export type LocalizedText = string | {\n    readonly en: string;\n    readonly [locale: string]: string;\n};',
+  },
+  {
+    name: 'LocalModelEntry',
+    declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n}',
+  },
+  {
+    name: 'LocalModelsActionResult',
+    declaration: 'export type LocalModelsActionResult = {\n    readonly ok: true;\n    readonly snapshot: LocalModelsSnapshot;\n} | {\n    readonly ok: false;\n    readonly reason: string;\n    readonly snapshot: LocalModelsSnapshot;\n};',
+  },
+  {
+    name: 'LocalModelsSnapshot',
+    declaration: 'export interface LocalModelsSnapshot {\n    readonly state: LocalModelsState;\n    readonly directories: readonly string[];\n    readonly models: readonly LocalModelEntry[];\n    readonly problems: readonly {\n        readonly directory: string;\n        readonly reason: string;\n    }[];\n}',
+  },
+  {
+    name: 'LocalModelsState',
+    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
   },
   {
     name: 'LogExporterOptions',

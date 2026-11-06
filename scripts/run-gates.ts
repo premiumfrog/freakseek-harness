@@ -729,8 +729,9 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
     })
   return [
     pnpmScript('native-system', 'build:native-system'),
+    pnpmScript('gguf-engine', 'build:gguf-engine'),
     ...electron,
-    { ...instrumented, needs: ['native-system', ...electron.map(gate => gate.id)] },
+    { ...instrumented, needs: ['native-system', 'gguf-engine', ...electron.map(gate => gate.id)] },
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
@@ -738,7 +739,7 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
       ...workers.exempt,
     ], {
       label: 'test:coverage-exempt-heavy',
-      needs: ['native-system'],
+      needs: ['native-system', 'gguf-engine'],
     }),
   ]
 }
@@ -752,9 +753,11 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
 function ciUnitGates(): Gate[] {
   return [
     pnpmScript('native-system', 'build:native-system'),
+    // Engine-backed specs (llm-local-gguf) spawn the release binary.
+    pnpmScript('gguf-engine', 'build:gguf-engine'),
     pnpmExec('unit', ['vitest', 'run'], {
       label: 'test',
-      needs: ['native-system'],
+      needs: ['native-system', 'gguf-engine'],
       streamOutput: true,
     }),
   ]
