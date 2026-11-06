@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-settings-local-models
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `@deepseek-ai/dsh-client-ui-settings-local-models` adds **Settings → Local models** to the Web and desktop clients. The section lists every GGUF file the Host's [`dsh-llm-local-gguf`](../../llm/llm-local-gguf/README.md) provider found, with its architecture, size, quantization, and tool and reasoning support; **Load** loads one into the local engine and makes it the default for new conversations, and **Unload** releases its memory. The page also shows the scanned model folders and any engine or folder problem.

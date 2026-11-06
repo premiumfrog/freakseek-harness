@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # dsh-gguf-engine
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-gguf-engine` is a Rust executable that runs GGUF chat models on the CPU. It parses the GGUF header, rebuilds the tokenizer from `tokenizer.ggml.*` metadata, renders the file's own Jinja chat template, keeps weights quantized in memory, and generates tokens with a prefix-reusing KV cache. A host drives it with one JSON object per line on stdin and reads one JSON object per line from stdout ([protocol](PROTOCOL.md)). The engine opens no sockets: its dependency tree contains no networking crate, and its only I/O is the model file and the two pipes. [`@deepseek-ai/dsh-llm-local-gguf`](../../packages/llm/llm-local-gguf/README.md) is its host.

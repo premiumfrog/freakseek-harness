@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-llm-local-gguf
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `@deepseek-ai/dsh-llm-local-gguf` serves the `local` provider route from GGUF files on disk. Requests run in the `dsh-gguf-engine` child process built from [`native/gguf-engine`](../../../native/gguf-engine/README.md), which reads model files, renders each model's own chat template, and streams tokens over stdio. The engine opens no sockets and makes no network requests, so a conversation on this route never leaves the computer. The package also serves the `localModels` Remote that the Local models settings page uses to list, load, and unload models.

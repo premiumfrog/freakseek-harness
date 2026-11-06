@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-09-15-shipped-optional-bundles.zh.md)
-
 ## Problem
 
 The Web plugin page manages only the bundles a person installed into the profile. An official experimental layer such as Agent Teams had to be found on npm and installed by name before it could be switched on, and [default-product isolation](2026-09-12-default-product-experimental-isolation.md) kept every experimental package out of the installation's runtime dependencies, so nothing shipped with dsh could offer it.
@@ -13,7 +11,6 @@ The Web plugin page manages only the bundles a person installed into the profile
 The launcher names in `OPTIONAL_BUNDLES` (`packages/util/official-bundles/src/bundles.ts`, beside the profile templates) the bundles the installation ships for a person to switch on. Each must be a runtime dependency of `apps/cli` that declares `dsh.bundle.patch`, and no shipped profile template selects it. The plugin manager's `listBundles` reports such a bundle as `optional`: switched off until selected, never removable, resolved from the installation like any installation-supplied bundle. The Web plugin page presents offered optional bundles in its Official group, tagged experimental when the package is experimental, ahead of the profile's own installed bundles. The [persistent-terminal bundle](../../../../packages/experimental/terminal-bundle/README.md) remains available to the Host but has no page switch, even when enabled; its existing profile selection remains intact.
 
 Default-product isolation keeps its rules with one declared exception: an optional bundle's dependency graph is outside the default product. The static gate skips the `dependencies` edge from `@deepseek-ai/dsh` to a listed bundle and still rejects a runtime import, a shipped composition, a preset, or a default template that names it, an experimental dependency the list does not name, and a listed name that is not a runtime dependency or not a bundle. The workspace-constraints check accepts the same `dependencies` edges and no other runtime section, and the packed-install release check skips them from the installed entry package while requiring each listed bundle to be installed.
-
 
 ## Alternatives considered
 

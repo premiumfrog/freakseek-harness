@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-agent-tool-presentation
 
-English | [中文](README.zh.md)
-
 > **Deprecated:** For new configurations, mount `@deepseek-ai/dsh-tool-executor-native` or `@deepseek-ai/dsh-tool-executor-ptc` directly. Existing configurations remain supported. To migrate, replace this selector row with the corresponding executor row and remove `config.mode`; do not load both in the same scope.
 
 ## Summary
@@ -104,7 +102,6 @@ No direct invalidation; the presentation is fixed when the agent is composed, so
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define when this row needs special care. They are current package constraints, not a task backlog.
 

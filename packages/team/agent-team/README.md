@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-agent-team
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-agent-team` adds a durable shared task board to an existing subagent tree. Members use standard subagent tools to discover and contact one another. Team adds compare-and-set task ownership. Mount `dsh-tool-agent-team` for task tools. Members share one checkout.
@@ -188,7 +186,6 @@ Task records stay outside model history. Task results append after the reusable 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits describe what a team cannot do yet or what needs special operational care. They are current package constraints, not a comparison with other coordination mechanisms.
 

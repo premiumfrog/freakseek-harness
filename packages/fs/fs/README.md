@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-fs
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Use `dsh-fs` for consistent file access across local, confined, and SSH execution environments. Consumers can resolve stable identities, read text or bounded bytes, list directories, watch targets, write files, apply literal edits or patch hunks, delete files, and move text files with optional patching. Optional version guards reject stale mutations. Moves report destination publication separately from source removal. Mount a provider for the chosen environment; `dsh-tool-fs` supplies model-facing tools separately.
@@ -114,7 +112,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define when the contract is a poor fit or needs special operational care. They are current package constraints, not a general filesystem comparison or a task backlog.
 

@@ -2,14 +2,11 @@
 
 Status: implemented
 
-English | [中文](2026-09-27-progressive-office-skills.zh.md)
-
 ## Problem
 
 Combined authoring and rendering instructions spend context on operations unrelated to ordinary editing. Rendering tool activation adds a second discovery path and durable state even though shell tools already own execution permissions and process management. A missing renderer can prevent loading otherwise usable editing guidance.
 
 ## Decision
-
 
 The [Office provider](../../../../packages/skill/skill-office/README.md) lists a compact router and six format-specific authoring or operation skills. The model loads full instructions by name and selects rendering for appearance-focused changes unless the user explicitly skips it. Rendering uses a private, randomly named temporary directory inside the task workspace and removes it after inspection. Skills invoke the shared Python checker and configured LibreOffice Kit CLI through ordinary Bash or PowerShell. SDK and Desktop own their Office composition separately; ordinary Web and the shared base do not mount these plugins.
 

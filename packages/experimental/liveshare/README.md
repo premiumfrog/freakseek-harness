@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-experimental-liveshare
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Share a Session with colleagues through the normal DSH browser interface. The owner chooses viewing or bounded writing, and independently allows forking; the owner host enforces those choices. Attachment upload follows sharing itself: a Session the viewer can see accepts files. This opt-in bundle adds owner sign-in, sharing controls, the outgoing gateway, and the viewer surfaces of the owner's own Web page. The default Web profile excludes it. The separately deployed Liveshare server authenticates viewers and transports their requests; its OAuth, database, routing, and deployment implementation are not part of this package.
@@ -91,7 +89,6 @@ Both tiers drive the shared Session; what separates them is writing. The sandbox
 **Shared PTC programs are not sandboxed to the share.** `run_code` is admitted at both tiers because a viewer may need programmatic tool use, but the program runs under the owner's standing file policy rather than a share tier: it can read and write files outside the shared workspace, and the tier does not narrow that. The viewer's nested `tools.*` calls still pass the same guard and path checks as any other call, so `bash` stays refused and file tools stay inside the grant. Share only with people you trust until a PTC sandbox can be bounded to a share.
 
 Attachment uploads are neither a tier nor part of the fork switch: they follow visibility. An admitted viewer may attach uploaded files to the shared Session and to the forks it created through this share, whichever tier the share carries and whether or not it allows forking. The owner has no separate attachment switch.
-
 
 Shareable viewer methods come from installed plugins' live Remote methods, enumerated from the Host's Typert registry in [`shareable-catalog.ts`](src/host/shareable-catalog.ts). DSH core service namespaces are excluded ([`EXCLUDED_SHARE_NAMESPACES`](src/host/shareable-catalog.ts) lists them), and so are components of a core profile bundle as the plugin manager reports them; other user-installed and DSH experimental plugins remain. The owner may open every installed plugin at once, or set each plugin to none, all its methods, or a subset. There is no read/write distinction: a method is callable only where the live catalog and that share's own policy name it, on the resources the reader can see.
 

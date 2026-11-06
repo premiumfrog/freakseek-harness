@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-offline
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `@deepseek-ai/dsh-offline` is the last layer of the `offline` profile (`dsh-base`, `dsh-web-app`, `dsh-offline`) and of the desktop app. It removes every row that contacts a remote service on its own, mounts [`dsh-llm-local-gguf`](../../llm/llm-local-gguf/README.md) as the only model route, and replaces DeepSeek-API web search with a direct [DuckDuckGo](../../web/web-search-duckduckgo/README.md) query. The only outbound traffic left is model-initiated: the web search tool sends its query text, and the web fetch tool retrieves the URL the model names.

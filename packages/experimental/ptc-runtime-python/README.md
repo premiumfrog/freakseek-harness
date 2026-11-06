@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-experimental-ptc-runtime-python
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Run model-generated Python in a fresh CPython 3.10+ process on macOS or Linux under the same file policy as TypeScript PTC. Programs can use top-level `await` and `return`, call configured bindings, and write normal stdout/stderr. Direct file operations follow the selected sandbox policy; resource budgets and process-group teardown bound execution. No state persists across runs, and no shipped profile enables this experimental runtime.
@@ -121,7 +119,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define what the package does and does not cover; they are current package constraints, not a task backlog.
 

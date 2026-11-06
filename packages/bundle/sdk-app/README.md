@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # `@deepseek-ai/dsh-sdk-app`
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 The SDK stdio application as a `dsh` profile bundle over [`dsh-base`](../base/README.md). It inherits the base's disabled module-HMR policy; its patch mounts an app-owned zero-option command provider, and starts [`dsh-sdk-jsonrpc-server`](../../sdk/server/README.md) only after that provider accepts the invocation. `dsh --profile sdk --help` therefore writes help and exits without claiming stdin or stdout. The standalone [`sdk-minimal`](../sdk-minimal/README.md) bundle reuses the same startup provider with its own profile name.
@@ -70,7 +68,6 @@ Enabling `plugin_manager` changes the tool-schema prefix from earlier SDK versio
 - **User plugins can violate stdout purity** — profile and per-launch patches are trusted application composition. The shipped bundle writes no non-protocol stdout, but it cannot contain an arbitrary inserted plugin.
 - **Plugin changes share a profile** — saved changes affect `<DSH_HOME>/profiles/sdk` and other embeddings using that home on their next launch; use separate `dshHome` directories for independent compositions. The Python launcher uses Node/pnpm from its selected downloaded runtime; without that payload or an external pnpm, package operations fail.
 - **Configuration changes require restart** — the `sdk-app` bundle disables HMR in YAML so one stdio connection never observes a replacement server or Agent dependency.
-
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -5,8 +5,6 @@ description: "The desktop app now runs only local GGUF models and no longer offe
 
 # Desktop runs on local models only
 
-English | [中文](guide.zh.md)
-
 ## Change
 
 The desktop profile stacks the new `@deepseek-ai/dsh-offline` bundle after `dsh-base` and `dsh-web-app`. It disables every row that contacts a remote service on its own: DeepSeek and pi-ai model routes, DeepSeek request metadata and session-log upload, account sign-in, telemetry and product analytics, plugin installation, and DeepSeek-API web search. Models come from GGUF files through `@deepseek-ai/dsh-llm-local-gguf`, and web search goes directly to DuckDuckGo. The welcome screen no longer asks for a DeepSeek sign-in or API key, and the app's own Electron session reaches only loopback and local resources.

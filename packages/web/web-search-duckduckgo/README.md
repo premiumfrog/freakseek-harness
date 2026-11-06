@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-web-search-duckduckgo
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `@deepseek-ai/dsh-web-search-duckduckgo` registers the `duckduckgo` search provider on the [`dsh-web`](../web/README.md) seam. Each search posts only the query text to DuckDuckGo's HTML endpoint and parses the organic results into citeable sources; it needs no account or key and sends nothing else. The [`dsh-offline`](../../bundle/offline/README.md) bundle selects it.

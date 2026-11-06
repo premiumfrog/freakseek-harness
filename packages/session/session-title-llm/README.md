@@ -5,8 +5,6 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-session-title-llm
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-title-llm` executes one prepared auxiliary title request under consistent execution controls. Each provider supplies its own system instruction, user input, source-message attribution, reasoning selection, and output interpretation. This package resolves the route, caps the input, output, and end-to-end duration, keeps caller cancellation effective throughout streaming, records the exact model-visible request, and assembles the stream. Invalid or late operational results reject before a title can be replaced.
@@ -111,7 +109,6 @@ No main-request invalidation. Auxiliary cache reuse is provider-specific: this e
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define the accepted generation shapes. They are current package constraints.
 

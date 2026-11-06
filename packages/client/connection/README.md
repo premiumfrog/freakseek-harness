@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-connection
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 The package carries browser-to-Host Remote calls, exact Fetch responses, and connection generations. The Client plugin mounts `ctx.connection` with current-page loopback state, generic RPC, the active generation and its Host facts, observable recovery state, an immediate reconnect command, and the registration point for one generation source. A generation becomes visible when its source reports ready; source completion, failure, withdrawal, or an explicit stop clears it before `ConnectionController` applies its retry policy.
@@ -63,7 +61,6 @@ An ended `$events` stream, a Remote stream error, a non-ready opening item, or a
 
 Set the Host Connection row's `config.recovery` to override retry caps, the growth factor, or handshake warning and cancellation times; the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-connection) lists accepted fields. The Host validates these values and injects them into each served page. The Client validates the bootstrap data before providing Connection and uses those defaults when Gateway starts its loop; explicit `start()` timing overrides take precedence. The growth factor must be finite and at least one. Readiness, failure, cancellation, or a hard deadline that occurs before the warning cancels that warning. Reload the page after changing Host recovery configuration.
 
-
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -81,7 +78,6 @@ None; this package neither assembles nor sends a provider request.
 - **A plain-HTTP listener exposes the bearer cookie in transit** — such a deployment cannot mark the browser cookie `Secure`, so serving the same authority over a network can leak the session cookie; configure TLS on the Web carrier ([`dsh-host-webserver`](../../host/webserver/README.md)) to have the cookie marked `Secure` and confined to TLS.
 - **Unused API Peers may remain until Host shutdown** — no connect deadline or idle collection is imposed on lightweight records whose caller never establishes a WebSocket. Cookie expiry still rejects new requests. API callers must reconnect through `/connect` after their owning socket closes or the Host restarts.
 - **There is no logout operation** — clearing the browser cookie ends one browser session; deleting the owner credential record and restarting `dsh` revokes every session.
-
 
 <a id="dev-note"></a>
 ### Dev Note

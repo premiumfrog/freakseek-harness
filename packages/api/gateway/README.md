@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-api-gateway
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Two-sided Typert RPC endpoint for Host and Client Cordis environments. The Host entry provides `ctx.typertGateway`, while `@deepseek-ai/dsh-api-gateway/client` provides `ctx.remote`; both consume the same generated `InvocationDescriptor` contract and leave business selection to API Remotes. Connection carries unary request correlation, trust, and response envelopes, while Gateway owns multiplexed Remote streams, each carrying a Client-to-Host uplink on the same logical stream.
@@ -96,7 +94,6 @@ No direct effect; invoked business Services own any model-visible result.
 - `websocketCompression` defaults to `'deflate'`, which negotiates `permessage-deflate`; the Host compresses its own outbound frames whose JSON text reaches 1,024 characters and leaves shorter frames uncompressed, because `ws` ignores its `threshold` option under the default context takeover. A completed compressed downlink write counts as buffered activity for the heartbeat rule, while a sub-threshold write counts only when the local send buffer was already full; a loopback deployment that gains no bandwidth can set it to `'none'`.
 - A completed uncompressed queued write shows that the TCP peer acknowledged data. A compressed write instead completes once `ws` has deflated and written it, so it proves only that the local pipeline drained. Behind a buffering reverse proxy that peer is the proxy, so a vanished Client during sustained downlink is detected only after the proxy stops accepting data.
 - The Gateway exposes each WebSocket stream's inbox capacity and JSON envelope cost through `invocation.uplinkWindow`; carriers without an encoded-frame inbox limit leave it absent. Domain protocols can advertise this window and use acknowledgements to bound in-flight bytes. The Gateway itself does not issue credits: a Client that sends faster than the method reads, or that sends to a method never taking its uplink, fails its stream with `gateway/uplink-overflow`, and no uplink item is replayed across carrier generations; a domain that must resume an uplink carries its own acknowledgement cursor in the reopened request.
-
 
 <a id="dev-note"></a>
 ### Dev Note

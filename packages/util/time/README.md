@@ -5,8 +5,6 @@ kind: "package-library"
 
 # dsh-util-time
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Shared time vocabulary for instant, zone, elapsed-time, and recurrence boundaries. Strict parsers return accepted values or refusal reasons; `resolveLocalInstant` applies maintained Temporal gap and overlap behavior. `Duration` stores a millisecond span. `Cron` and `RRule` parse distinct expression types and compute bounded occurrences from explicit decision times. The library owns no task state, delivery policy, domain errors, or model-facing text.
@@ -30,7 +28,6 @@ Shared time vocabulary for instant, zone, elapsed-time, and recurrence boundarie
 It is a **library, not a service or plugin**: no `ctx`, registers nothing, holds no state.
 
 Call it at the boundary that receives the zone or the wall-clock selector, before the value reaches anything durable. `dsh-api-session-controller` and `dsh-subagent` admit a caller-reported zone through `canonicalClientTimeZone`; `dsh-time-context` admits the zone a request turn reports through `canonicalizeTimeZone` and refuses an alias rather than rewriting it; `dsh-schedule` reads absolute and wall-clock selectors through the strict parsers, resolves local targets through `resolveLocalInstant`, and uses the shared `Cron` / `RRule` recurrence values; `dsh-session-format-v0-to-v1` validates a stored schedule instant through `fourDigitYearEpoch` while keeping its own released-log error. `dsh-time-context` reads its elapsed reading through `Duration` and keeps the wording of the line it injects. Schedule retains its record types, relative intervals, daily/weekly policy, and delivery limits. The library works in Host and browser code without a Cordis service.
-
 
 ### Entry point
 

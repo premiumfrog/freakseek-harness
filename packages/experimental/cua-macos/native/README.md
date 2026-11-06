@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # dsh-cua native helper
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 This macOS 14+ JSON-lines helper uses Swift 6, AppKit, Accessibility, CoreGraphics and ScreenCaptureKit. Windows support is in development. It adapts selected MIT-licensed Cua Driver behavior without loading an external driver. `upstream.json` records the fixed upstream version, adapted Swift files and local modules; `LICENSE.cua-driver` preserves the MIT notice.
@@ -55,7 +53,6 @@ The shared service uses an owner-only Unix socket under `/tmp/dsh-cua-<uid>`, ke
 
 AppKit runs on the main event loop. Blocking socket accepts and handshakes use background queues; server callbacks explicitly carry `@MainActor @Sendable` isolation and weak ownership. Shutdown releases accepted connections even when their handshake is incomplete. Blocking AX and input use each connection’s serial actor; all connections share a FIFO for complete desktop operations. Socket writes do not hold that operation slot. A request cancellation waits for native work to stop; it does not cancel the connection’s lifetime latch. Screenshot timeout ends only the request. An unfinished system capture retains the single capture slot until its real callback arrives, rejects new captures with CAPTURE_BUSY and leaves AX/input available. Only an operation or cleanup that cannot stop can invalidate the shared process. The proxy accepts `--max-request-bytes`, `--max-response-bytes`, `--ax-timeout-ms`, `--timeout-ms`, `--screenshot-timeout-ms`, `--shutdown-grace-ms` and `--text-event-interval-ms`; the Host sets the same limits in hello. An AX deadline bounds an individual system call. Cancellation can follow partial input, and uncertain input is never replayed automatically.
 
-
 -----
 
 <a id="request-protocol"></a>
@@ -86,7 +83,6 @@ Stable error codes are `INVALID_REQUEST` (malformed envelope), `INVALID_ARGUMENT
 Application selection returns an authorization record to the Host: a SHA-256 digest of the case-sensitive bundle identifier prefixed with `macos:bundle-id:`, display name, optional executable path, and persistable flag. All installations with that identifier share consent, including unsigned and ad-hoc-signed applications. Without a nonempty bundle identifier, both running and stopped applications use SHA-256 of `macos:executable-path:` followed by the symlink-resolved executable path and remain eligible for saved consent. A running bundle identifier remains usable when the process path query fails; the record omits executablePath. Available paths must still match the selection. Without either identity, APP_PATH_UNAVAILABLE reports the path query cause, including its errno, before any target operation. PROCESS_INSPECTION_FAILED means the process instance could not be verified; only ESRCH from process inspection is reported as a missing process. Neither failure triggers an automatic retry. Process IDs and start times validate live handles but do not enter the saved identity. The Host strips this record from model results and obtains human consent before launch, observation or input. This pipe protocol is trusted Host transport, not a sandbox against a separately authorized shell process.
 
 Protocol declarations are generated from [the shared protocol](../../cua/src/protocol.ts). Run `pnpm exec tsx packages/experimental/cua-macos/native/generate-protocol.ts` from the repository root; package tests verify generated JSON and Swift field/enum tables. Model-submittable parameters exclude Host resource bounds and the private launch continuation.
-
 
 -----
 
@@ -120,7 +116,6 @@ Request modifier arrays accept command/control/option/shift/fn. The object API n
 `hover` accepts an observed element index or a window-local point and never presses a mouse button. Disabled controls may be hovered. No request completion, AX read or screenshot restores the previous point; subsequent hover calls can enter revealed content. Click sends its button events at the target without an off-window priming click. Individual requests are serialized, but no application is reserved between calls. Other input or application changes can interrupt the interaction.
 
 `hover` first uses a same-window element or ancestor advertising both `AXShowAlternateUI` and `AXShowDefaultUI`. Revealed descendants retain the parent UI; leaving restores it once. An AX action failure propagates without trying another input route. Without an applicable AX route, hover moves the visible system cursor through the system input queue after checking the foreground PID and AppKit mouse hit testing at the point. Input-transparent windows and transparent regions do not block the target. A failed check returns `FOREGROUND_REQUIRED` without moving the cursor. The result identifies `hoverRoute` as `accessibility` or `system-pointer` and reports `systemPointerMoved`. Hover does not activate, raise or restore focus. Other input or window changes can race the check and dispatch.
-
 
 -----
 

@@ -5,8 +5,6 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-sdk-client
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-sdk-client` lets TypeScript programs drive a complete DeepSeek Harness runtime over stdio JSON-RPC. Use `run()` for ordinary text, supported slash commands, and image content blocks, and `onNotification` to observe its notifications. `HarnessClient` provides direct protocol access. Callers may provide `dshBin`; otherwise the client resolves the same-version `@deepseek-ai/dsh` executable. The client owns the subprocess, reports typed failures, and reaps it on `close()` or `await using`.
@@ -177,7 +175,6 @@ None in the client process. Profile, patch, provider, model, and history choices
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define when the client is a poor fit or needs special care. They are current package constraints, not a comparison with other SDK clients or a task backlog.
 

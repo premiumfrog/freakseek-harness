@@ -5,8 +5,6 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-client-test-runtime
 
-English | [中文](README.zh.md)
-
 Direct component fixtures use `contextMenuHook(open)` to supply the global menu hook with production gesture handling. An unstubbed activation throws; Slot composition tests mount the menu plugin itself.
 
 ## Summary
@@ -174,7 +172,6 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 These limits define how the bench is consumed. They are current package constraints, not a task backlog.
 

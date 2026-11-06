@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-conversation
 
-English | [中文](README.zh.md)
-
 Desktop product events use the optional [product analytics service](../product-analytics/README.md); ordinary Web interactions are excluded.
 
 ## Summary
@@ -222,7 +220,6 @@ Serialization of the empty retry message depends on the adapter. Prefix reuse de
 - **Manual continuation uses a fixed product allowlist** — the supported failure codes are independent of the provider's configurable `retryableCodes`; changing automatic retry policy does not expand or reduce this action. `STREAM_CLOSED` permits an explicit new user turn even when the default policy does not retry it. That code can also identify a protocol violation, so another request is not guaranteed to recover.
 - **Composer backdrop blur is verified only in Chromium** — with `will-change: transform` on the docked composer, descendant `backdrop-filter` still samples the transcript in Chromium; WebKit behavior has not been verified.
 - **A failing Definition costs a full replay per publication** — after an incremental flush fails, the assembler replays the complete loaded window to keep the views correct. A Definition that fails on every update therefore replays the whole window on each publication until its owner fixes it ([window update paths](../../../docs/subsystems/conversation.md#window-update-paths)).
-
 
 <a id="dev-note"></a>
 ### Dev Note

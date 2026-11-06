@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-cua
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Inspect applications, retain window objects across PTC calls, and send actions through the normal tool pipeline. Platform providers supply native execution; this library owns the object API, request validation, application consent, and image admission. The external PTC runtime owns variable persistence.
@@ -80,7 +78,6 @@ The provider calls [installCua](src/index.ts) with its prepared helper, connecti
 `agentPreset` defaults to `ptc`, restricting tools and guidance to Agents bound to that preset. The provider uses the existing `agent/created` and `agent-preset/selected` events and Agent-owned scopes, including Agents already present when it loads. Provider unload and Agent disposal release those registrations. Preset definitions may register after the provider; a preset name filters bound Agents and supplies no tools until a matching Agent exists. Set `agentPreset: false` for global registration in standalone compositions without presets. The Host continues to own permissions, native connections and cancellation; preset definitions remain unchanged.
 
 [The operation schema](src/protocol.ts) is the authority for model parameters and separately declared Host-only fields. Native implementations enforce target identity, window geometry, resource limits, and operating-system access at execution. The permission store owns durable consent separately from the native protocol.
-
 
 The root Host entry exports `installCua`, `CuaConfig`, and the Typert-discovered `CuaAccess` service; its `apply()` only marks the optional Client contribution. `/client` loads the permission UI through the existing module loader. Separate Host and Client compiler projects keep React, CSS, and browser registrations out of headless imports. `/api` owns the app/window API and its types; `/bridge`, `/native-client`, and `/protocol` retain runtime and platform consumers. `/types` exports only the named types required by generated Remote declarations. The Client uses package-local types. `/typert` supplies Host reflection and `/remote` supplies generated browser descriptors and codecs; permission authority remains on the Host.
 
