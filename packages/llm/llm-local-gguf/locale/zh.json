@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "本地 GGUF 模型",
+    "description": "通过内置 Rust 引擎离线运行 GGUF 模型。"
+  }
+}

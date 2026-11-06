@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ローカル GGUF モデル",
+    "description": "内蔵の Rust エンジンで GGUF モデルをオフライン実行します。"
+  }
+}

@@ -1945,6 +1945,46 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-api-key -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-local-gguf -->
+<a id="deepseek-aidsh-llm-local-gguf"></a>
+
+## `@deepseek-ai/dsh-llm-local-gguf`
+
+- `inject`: `llm`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/llm/llm-local-gguf/src/config.ts:19`](../packages/llm/llm-local-gguf/src/config.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Engine executable; omitted resolves through {@link resolveEnginePath}. */
+  enginePath?: string
+  /** Directories scanned for `.gguf` files, `~`-expanded; omitted or empty scans `$DSH_HOME/models`. */
+  modelDirectories: Volatile<string[] | undefined>
+  /** Context window requested at load, clamped by the engine to the trained length. */
+  contextLength: Volatile<number>
+  /** KV cache slots kept at once; each conversation and auxiliary request kind uses its own. */
+  cacheSlots: number
+  /** Default per-reply output cap. */
+  maxOutputTokens: Volatile<number>
+  /** Inference threads; 0 uses every core. */
+  threads: number
+  /** Sampling temperature; 0 selects greedy decoding. A request's own temperature overrides it. */
+  temperature: Volatile<number>
+  /** Candidates kept by top-k filtering; 0 keeps the whole vocabulary. */
+  topK: Volatile<number>
+  /** Cumulative probability kept by nucleus (top-p) filtering. */
+  topP: Volatile<number>
+  /** Candidates below this fraction of the most likely token's probability are dropped. */
+  minP: Volatile<number>
+  /** Penalty divisor for tokens among the last 64 generated; 1 disables it. */
+  repeatPenalty: Volatile<number>
+  /** Milliseconds the engine gets to exit on shutdown before it is killed. */
+  shutdownGraceMillis: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-local-gguf -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-pi-ai -->
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -4792,6 +4832,27 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-deepseek -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-duckduckgo -->
+<a id="deepseek-aidsh-web-search-duckduckgo"></a>
+
+## `@deepseek-ai/dsh-web-search-duckduckgo`
+
+- `inject`: `web`
+- `source`: [`packages/web/web-search-duckduckgo/src/index.ts:24`](../packages/web/web-search-duckduckgo/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** HTML search endpoint. */
+  endpoint?: string
+  /** Per-search timeout in milliseconds. */
+  timeoutMs?: number
+  /** `User-Agent` header sent with each search. */
+  userAgent?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-duckduckgo -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-webhook-github -->
 <a id="deepseek-aidsh-webhook-github"></a>
 
@@ -4940,6 +5001,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-general` | — | [`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-settings-local-models` | — | [`packages/client/ui-settings-local-models/src/index.ts`](../packages/client/ui-settings-local-models/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` | — | [`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugins` | — | [`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-session-log` | — | [`packages/client/ui-settings-session-log/src/index.ts`](../packages/client/ui-settings-session-log/src/index.ts) |
@@ -5087,6 +5149,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-loader-smoke` | — | [`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts) |
 | `@deepseek-ai/dsh-native-command` | — | [`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts) |
 | `@deepseek-ai/dsh-official-bundles` | — | [`packages/util/official-bundles/src/index.ts`](../packages/util/official-bundles/src/index.ts) |
+| `@deepseek-ai/dsh-offline` | — | [`packages/bundle/offline/src/index.ts`](../packages/bundle/offline/src/index.ts) |
 | `@deepseek-ai/dsh-output-retention` | — | [`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts) |
 | `@deepseek-ai/dsh-package-manifest` | — | [`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts) |
 | `@deepseek-ai/dsh-personalized-recommendations` | — | [`packages/experimental/personalized-recommendations/src/index.ts`](../packages/experimental/personalized-recommendations/src/index.ts) |

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Ajustes de modelos locales",
+    "description": "Muestra, carga y descarga modelos GGUF locales."
+  }
+}

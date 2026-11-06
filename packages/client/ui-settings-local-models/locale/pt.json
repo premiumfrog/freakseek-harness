@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Configurações de modelos locais",
+    "description": "Lista, carrega e libera modelos GGUF locais."
+  }
+}

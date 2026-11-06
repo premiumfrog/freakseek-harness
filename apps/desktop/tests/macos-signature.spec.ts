@@ -59,8 +59,11 @@ describe('desktop macOS release signature', () => {
       'com.apple.security.cs.disable-library-validation', 'com.apple.security.device.audio-input']) {
       expect(entitlements).toContain(`<key>${key}</key>\n    <true/>`)
     }
-    expect(config.extraResources).toHaveLength(2)
+    expect(config.extraResources).toHaveLength(3)
     expect(config.extraResources[0]?.to).toBe('runtime')
+    // The local GGUF engine ships as a signed executable beside the runtime.
+    expect(config.extraResources[1]?.to).toBe('gguf-engine/dsh-gguf-engine')
+    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/native/gguf-engine/target/release/dsh-gguf-engine')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
     const [dshFiles, dshNodeModules] = config.files.slice(-2)
     if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {

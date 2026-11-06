@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Réglages des modèles locaux",
+    "description": "Affiche, charge et libère les modèles GGUF locaux."
+  }
+}

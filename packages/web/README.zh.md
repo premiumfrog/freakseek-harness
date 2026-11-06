@@ -28,6 +28,7 @@ kind: "package-group"
 |---|---|---|
 | [`web/`](web/README.zh.md) | 搜索与抓取服务：通过可互换的后端搜索与抓取 URL，统一选择与错误策略 | `ctx.web` |
 | [`web-search-deepseek/`](web-search-deepseek/README.zh.md) | 通过 DeepSeek Messages 搜索网页 | 注册到 `ctx.web` |
+| [`web-search-duckduckgo/`](web-search-duckduckgo/README.zh.md) | 直接搜索 DuckDuckGo，无需账号或密钥 | 注册到 `ctx.web` |
 | [`web-deepseek-api/`](web-deepseek-api/README.zh.md) | 通过 DeepSeek Search 与 Fetch API 搜索和抓取网页 | 注册到 `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.zh.md) | 匿名抓取 HTTP(S) 页面 | 注册到 `ctx.web` |
 | [`tool-web/`](tool-web/README.zh.md) | 向模型公开 `web_search` 与 `web_fetch` | 注册到 `ctx.tools` |

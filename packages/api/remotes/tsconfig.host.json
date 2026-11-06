@@ -97,6 +97,9 @@
     },
     {
       "path": "../../web/web"
+    },
+    {
+      "path": "../../llm/llm-local-gguf"
     }
   ]
 }

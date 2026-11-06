@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Einstellungen für lokale Modelle",
+    "description": "Lokale GGUF-Modelle anzeigen, laden und entladen."
+  }
+}

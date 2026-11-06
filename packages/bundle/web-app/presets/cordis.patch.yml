@@ -130,9 +130,10 @@
             name: '@deepseek-ai/dsh-tool-skill'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
+          # Each tool is off without its service (for example in dsh-offline), so the preset never waits on it.
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
-            disabled: !!js "!ctx.get('profileContext')"
+            disabled: !!js "!ctx.get('profileContext') || !ctx.get('pluginManager')"
           - id: tool-plugin-market
             name: '@deepseek-ai/dsh-plugin-market/tools'
-            disabled: !!js "!ctx.get('profileContext')"
+            disabled: !!js "!ctx.get('profileContext') || !ctx.get('pluginMarket')"

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Modèles GGUF locaux",
+    "description": "Exécute des modèles GGUF hors ligne avec le moteur Rust intégré."
+  }
+}

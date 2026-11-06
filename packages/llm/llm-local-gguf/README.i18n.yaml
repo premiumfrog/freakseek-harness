@@ -1,0 +1,67 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/llm/llm-local-gguf/README.md
+/:
+  en: 6d9799d62c286a45
+  zh: 6bee5a30f83893fc
+/deepseek-ai-dsh-llm-local-gguf:
+  en: a4e5e1f4b66925eb
+  zh: 516ed52ed23dd9a5
+/deepseek-ai-dsh-llm-local-gguf/summary:
+  en: 41aca4cea2f66e0e
+  zh: 1da346ab48e5bc7d
+/deepseek-ai-dsh-llm-local-gguf/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: ce40cab8e7534137
+/deepseek-ai-dsh-llm-local-gguf/use-this-package:
+  en: e03ceb20182197e3
+  zh: 8596c71f054588e0
+/deepseek-ai-dsh-llm-local-gguf/use-this-package/configuration:
+  en: b5357ef32c256df2
+  zh: 86bf9ac22a0a1c67
+/deepseek-ai-dsh-llm-local-gguf/use-this-package/supported-models:
+  en: 06a898959fa05a97
+  zh: 394f3b90f9657991
+/deepseek-ai-dsh-llm-local-gguf/use-this-package/failures:
+  en: bf134617d40a4242
+  zh: 34175b6eaf7b33df
+/deepseek-ai-dsh-llm-local-gguf/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 9b8b7df837cf37a5
+/deepseek-ai-dsh-llm-local-gguf/understand-the-implementation/source-map:
+  en: e59b8ccfcf258468
+  zh: 2d0f40a8ddb3848a
+/deepseek-ai-dsh-llm-local-gguf/understand-the-implementation/request-translation:
+  en: f9ec1f33768022fd
+  zh: 0d33bcd9ce470310
+/deepseek-ai-dsh-llm-local-gguf/understand-the-implementation/output-parsing:
+  en: 324f4d9838a2848c
+  zh: d4158c3ea5139e18
+/deepseek-ai-dsh-llm-local-gguf/understand-the-implementation/prompt-cache:
+  en: dc0e1aeb2a498687
+  zh: 1a39a01dd1db02b1
+/deepseek-ai-dsh-llm-local-gguf/further-exploration:
+  en: 54385bfccc0e8b8c
+  zh: 40e3ce7f25743a08
+/deepseek-ai-dsh-llm-local-gguf/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-llm-local-gguf/model-experience/local-model-requests:
+  en: 447331c930c07a00
+  zh: 1c63999d270a9c81
+/deepseek-ai-dsh-llm-local-gguf/model-experience/local-model-requests/what-the-model-sees:
+  en: e68ba8d1e2a84002
+  zh: d77354ed2b84d53f
+/deepseek-ai-dsh-llm-local-gguf/model-experience/local-model-requests/token-effect:
+  en: 79307da9281f2942
+  zh: 8deb33f8d4177591
+/deepseek-ai-dsh-llm-local-gguf/model-experience/local-model-requests/kv-cache-effect:
+  en: 5bff7baec4019d0d
+  zh: c9b8d2d542b5d3e6
+/deepseek-ai-dsh-llm-local-gguf/known-limitations-and-deferred-work:
+  en: 07f6a00f95406ed6
+  zh: 258e10b24458d9cf
+/deepseek-ai-dsh-llm-local-gguf/known-limitations-and-deferred-work/dev-note:
+  en: 03825eccf79aa7c6
+  zh: e1e944ca0a87a8b0

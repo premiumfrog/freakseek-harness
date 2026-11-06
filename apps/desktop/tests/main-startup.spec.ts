@@ -322,7 +322,8 @@ vi.mock('electron', () => ({
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
   session: { defaultSession: {
     on: vi.fn(), cookies: harness.hostCookies,
-    setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: harness.socketHeaders },
+    setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(),
+    webRequest: { onBeforeSendHeaders: harness.socketHeaders, onBeforeRequest: vi.fn() },
   } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
@@ -349,7 +350,10 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
 }))
 vi.mock('../src/runtime-tree.ts', () => ({ readDesktopRuntime: () => ({ release: { version: '1.0.0' } }) }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
+/** Profile mode the mocked project manager reports; tests default to the online welcome flow. */
+const desktopMode = vi.hoisted(() => ({ offline: false }))
 vi.mock('../src/project-manager.ts', () => ({
+  get DESKTOP_OFFLINE() { return desktopMode.offline },
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
     disableAllPlugins = harness.disableAllPlugins
@@ -449,6 +453,7 @@ function applicationMenuItems(): MenuItemConstructorOptions[] {
 }
 
 beforeEach(() => {
+  desktopMode.offline = false
   vi.resetModules()
   vi.clearAllMocks()
   harness.dialog.showMessageBox.mockReset()
@@ -1428,6 +1433,18 @@ describe('desktop main startup', () => {
     harness.hosts.at(-1)!.fetch.mockResolvedValueOnce(Response.json({ hasApiKey: false }))
     await expect(handler(event)).resolves.toBe(false)
     await expect(handler({ ...event, sender: {} })).rejects.toThrow()
+  })
+
+  it('confines the application session and needs no provider key in the offline profile', async () => {
+    desktopMode.offline = true
+    await readyForUpdate()
+    const { session } = await import('electron')
+    expect(session.defaultSession.webRequest.onBeforeRequest).toHaveBeenCalledOnce()
+    const window = harness.windows[0]!
+    const handler = harness.handlers.get(DESKTOP_IPC.onboardingApiKey)!
+    harness.hosts.at(-1)!.fetch.mockClear()
+    await expect(handler({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).resolves.toBe(true)
+    expect(harness.hosts.at(-1)!.fetch).not.toHaveBeenCalled()
   })
 
   it('enlarges only an active onboarding window and keeps its size after completion', async () => {

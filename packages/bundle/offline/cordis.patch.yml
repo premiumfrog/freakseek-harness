@@ -1,0 +1,77 @@
+# The dsh-offline bundle patch: layered after dsh-base and dsh-web-app, it
+# removes every row that contacts a remote service on its own (DeepSeek model
+# routes and request metadata, third-party model catalogs, account sign-in,
+# telemetry, product analytics, session-log upload, and npm-backed plugin
+# installation) and serves models from local GGUF files instead.
+#
+# The only remaining outbound traffic is model-initiated: the web search tool
+# sends the query text to DuckDuckGo, and the web fetch tool retrieves the URL
+# the model names. Disable `tool-web` to remove both.
+
+# Model routes: only the local engine.
+- id: llm-deepseek
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-pi-ai
+  disabled: true
+- id: deepseek-llm-api-extensions
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: session-log-deepseek
+  disabled: true
+- id: deepseek-account
+  disabled: true
+- id: account-controller
+  disabled: true
+- id: ui-settings-account
+  disabled: true
+
+# Telemetry and analytics.
+- id: otel
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+- id: desktop-product-telemetry
+  disabled: true
+- id: product-analytics
+  disabled: true
+
+# Plugin installation resolves packages from the npm registry.
+- id: plugin-manager
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+- id: ui-plugin-manager
+  disabled: true
+
+# Web search through the DeepSeek API is replaced by a direct DuckDuckGo query.
+- id: web-search-deepseek
+  disabled: true
+- id: web-deepseek-api
+  disabled: true
+- id: web
+  config:
+    searchProvider: duckduckgo
+    fetchProvider: http
+
+# New conversations start on the local route; loading a model on the
+# Local models page saves it here.
+- id: agent-default-model
+  config:
+    provider: local
+    model: !!js process.env.DSH_LOCAL_MODEL ?? 'default'
+
+- insert:
+    - id: llm-local-gguf
+      name: '@deepseek-ai/dsh-llm-local-gguf'
+      config:
+        enginePath: !!js process.env.DSH_GGUF_ENGINE
+        modelDirectories: !!js "process.env.DSH_LOCAL_MODEL_DIRS?.split(process.platform === 'win32' ? ';' : ':')"
+
+    - id: web-search-duckduckgo
+      name: '@deepseek-ai/dsh-web-search-duckduckgo'
+
+    - id: ui-settings-local-models
+      name: '@deepseek-ai/dsh-client-ui-settings-local-models'

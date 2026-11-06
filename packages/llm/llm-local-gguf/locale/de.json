@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Lokale GGUF-Modelle",
+    "description": "Führt GGUF-Modelle offline mit der integrierten Rust-Engine aus."
+  }
+}

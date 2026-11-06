@@ -159,6 +159,11 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      // Offline GGUF inference engine (native/gguf-engine); `pnpm run build:gguf-engine` builds it for the host target.
+      {
+        from: process.env.DSH_GGUF_ENGINE_BUILD ?? fileURLToPath(new URL(`../../../native/gguf-engine/target/release/${packagesWindows ? 'dsh-gguf-engine.exe' : 'dsh-gguf-engine'}`, import.meta.url)),
+        to: `gguf-engine/${packagesWindows ? 'dsh-gguf-engine.exe' : 'dsh-gguf-engine'}`,
+      },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),

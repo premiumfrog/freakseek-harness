@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Modelos GGUF locales",
+    "description": "Ejecuta modelos GGUF sin conexión con el motor Rust integrado."
+  }
+}

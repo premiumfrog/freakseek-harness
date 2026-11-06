@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write native/gguf-engine/README.md
+/:
+  en: 33c52a6c2e9269b8
+  zh: ad7618bedd36ddea
+/dsh-gguf-engine:
+  en: 317132d0bb9c730f
+  zh: 32956d6e1343c557
+/dsh-gguf-engine/summary:
+  en: b600ed75e795a5c6
+  zh: 96fa1e9cbcf8f747
+/dsh-gguf-engine/table-of-contents:
+  en: 64fc6941ecb6cb07
+  zh: 6b5908c878df2715
+/dsh-gguf-engine/build-and-test:
+  en: 0ab5c546571a1bb8
+  zh: 8c2e6fdc943ee723
+/dsh-gguf-engine/supported-models:
+  en: b03044b9395fceb6
+  zh: da0d3c2affb13dcc
+/dsh-gguf-engine/understand-the-implementation:
+  en: afa6906a391c9438
+  zh: 979dec0aa81c1fb5
+/dsh-gguf-engine/known-limitations-and-deferred-work:
+  en: 7a3b430e55efcb26
+  zh: dc9c7014c5969eed

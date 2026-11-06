@@ -1,0 +1,34 @@
+[package]
+name = "dsh-gguf-engine"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Offline GGUF inference engine for DeepSeek Harness, driven over stdio JSON lines"
+publish = false
+
+[lib]
+name = "dsh_gguf_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dsh-gguf-engine"
+path = "src/main.rs"
+
+[dependencies]
+candle-core = "0.11"
+candle-nn = "0.11"
+fancy-regex = "0.14"
+minijinja = { version = "2", features = ["loader", "json"] }
+minijinja-contrib = { version = "2", features = ["pycompat"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[dev-dependencies]
+candle-transformers = "0.11"

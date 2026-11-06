@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Modelos GGUF locais",
+    "description": "Executa modelos GGUF offline com o mecanismo Rust integrado."
+  }
+}
