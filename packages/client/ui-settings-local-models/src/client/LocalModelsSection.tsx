@@ -8,14 +8,14 @@ import type { LocalModelsLocaleKey } from './locales.ts'
 import css from './LocalModelsSection.module.css'
 
 /** Registration-side face of the section. */
-export interface LocalModelsSectionInjected {
+export type LocalModelsSectionInjected = {
   hooks: {
     /** Page state store. */
     models: HostObservable<LocalModelsPageState>
   }
-  refresh(): void
-  load(modelId: string): void
-  unload(): void
+  refresh: () => void
+  load: (modelId: string) => void
+  unload: () => void
 }
 
 /** Props the renderer binds for the section. */
