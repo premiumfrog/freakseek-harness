@@ -272,7 +272,7 @@ Detected 52 changed roots and 52 structural differences. The review requirement 
 <a id="verification"></a>
 ## Verification
 
-Extraction passed canonical-graph, root-digest, and reachable-type-digest validation, permitting the original optional `surfaceOp` only for historical surface events. The in-tree check reconstructs each tag from its predecessor and verifies before/after values, snapshot coverage, and bilingual machine declarations.
+Extraction passed canonical-graph, root-digest, and reachable-type-digest validation, permitting the original optional `surfaceOp` only for historical surface events. The in-tree check reconstructs each tag from its predecessor and verifies before/after values, snapshot coverage, and machine declarations.
 
 ```sh
 pnpm run verify-persistence-releases

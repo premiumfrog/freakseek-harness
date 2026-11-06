@@ -44,10 +44,6 @@ pnpm dsh web
 - Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
 - Join <a href="https://discord.gg/4MrtZUhpxg">DeepSeek Harness Discord community</a>.
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## Development
 
 Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
