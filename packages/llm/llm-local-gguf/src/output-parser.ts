@@ -61,6 +61,30 @@ function parseJson(text: string): unknown {
   catch (_notJson) { return undefined }
 }
 
+/**
+ * The first balanced JSON object in `text` whose first key is `name`, or `''`.
+ * Some GGUF chat templates (Qwen 2.5) show the call format with doubled braces,
+ * `{{"name": …}}`, and models copy them; the call object sits inside the extra braces.
+ * @param text - a `<tool_call>` body.
+ * @returns the object's source text, or an empty string when there is none.
+ */
+export function firstObject(text: string): string {
+  const start = text.search(/\{\s*"name"\s*:/u)
+  if (start < 0) return ''
+  let depth = 0
+  let inString = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (inString) {
+      if (c === '\\') i++
+      else if (c === '"') inString = false
+    } else if (c === '"') inString = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return text.slice(start, i + 1)
+  }
+  return ''
+}
+
 /** Streaming parser for one generation. */
 export class OutputParser {
   private mode: Mode
@@ -164,7 +188,7 @@ export class OutputParser {
         if (end < 0 && !final) return
         const body = end < 0 ? this.buffer : this.buffer.slice(0, end)
         this.buffer = end < 0 ? '' : this.buffer.slice(end + TOOL_CLOSE.length).trimStart()
-        const call = callOf(parseJson(body.trim()))
+        const call = callOf(parseJson(body.trim()) ?? parseJson(firstObject(body)))
         if (call === undefined) this.emit(out, 'text', `${TOOL_OPEN}${body}${end < 0 ? '' : TOOL_CLOSE}`)
         else this.emitCall(out, call)
         this.mode = 'text'

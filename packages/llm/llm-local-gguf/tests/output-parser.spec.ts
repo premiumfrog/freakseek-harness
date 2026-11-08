@@ -52,6 +52,12 @@ it('parses Hermes tool calls with object arguments', () => {
   ])
 })
 
+it('parses a call wrapped in the doubled braces some chat templates show', () => {
+  // Qwen 2.5 GGUF output, verbatim: the template's example reads {{"name": …}}.
+  const blocks = everySplit('<tool_call>\n{{"name": "web_search", "arguments": {"queries": ["GGUF file format"]}}}}\n</tool_call>', { tools: ['web_search'] })
+  expect(blocks).toEqual([{ type: 'tool-call', id: 'call_1', name: 'web_search', arguments: '{"queries":["GGUF file format"]}' }])
+})
+
 it('parses several calls in one reply', () => {
   const blocks = run(['<tool_call>{"name":"a","arguments":{}}</tool_call>\n<tool_call>{"name":"b","arguments":"{\\"x\\":1}"}</tool_call>'], { tools: ['a', 'b'] })
   expect(blocks.map(b => b.type === 'tool-call' ? [b.name, b.arguments] : b.type)).toEqual([['a', '{}'], ['b', '{"x":1}']])
