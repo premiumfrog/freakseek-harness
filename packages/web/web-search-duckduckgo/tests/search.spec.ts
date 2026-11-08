@@ -37,6 +37,11 @@ it('posts only the query and honors maxResults', async () => {
   expect(init.body).toBe('q=local+llm')
 })
 
+it('reports the bot-check page as a provider error instead of an empty result', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<div class="anomaly-modal__box">Select all squares</div>', { status: 202 }))
+  await expect(new DuckDuckGoSearchProvider(Config({}) as Required<ConfigShape>).search({ query: 'x' })).rejects.toThrow(/bot check/u)
+})
+
 it('reports HTTP failures as provider errors', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }))
   await expect(new DuckDuckGoSearchProvider(Config({}) as Required<ConfigShape>).search({ query: 'x' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })

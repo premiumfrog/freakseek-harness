@@ -32,9 +32,9 @@ kind: "package-reference"
 |---|---|---|
 | `endpoint` | `https://html.duckduckgo.com/html/` | HTML search endpoint |
 | `timeoutMs` | `15000` | Per-search timeout |
-| `userAgent` | `Mozilla/5.0 (compatible; deepseek-harness)` | `User-Agent` header |
+| `userAgent` | `Mozilla/5.0 (compatible; freakseek)` | `User-Agent` header |
 
-Ads and non-HTTP links are dropped, duplicates are removed, and `maxResults` bounds the result. An HTTP failure or network error raises `WEB_PROVIDER_ERROR`.
+Ads and non-HTTP links are dropped, duplicates are removed, and `maxResults` bounds the result. An HTTP failure, a network error, or DuckDuckGo's bot-check page (HTTP 202, served to networks that search too often) raises `WEB_PROVIDER_ERROR`.
 
 -----
 

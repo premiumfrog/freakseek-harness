@@ -36,7 +36,7 @@ type ResolvedConfig = Required<Config>
 export const Config: z<Config> = z.object({
   endpoint: z.string().default('https://html.duckduckgo.com/html/'),
   timeoutMs: z.number().step(1).min(1).max(600_000).default(15_000),
-  userAgent: z.string().default('Mozilla/5.0 (compatible; deepseek-harness)'),
+  userAgent: z.string().default('Mozilla/5.0 (compatible; freakseek)'),
 })
 
 /** The provider over one validated configuration. */
@@ -71,7 +71,12 @@ export class DuckDuckGoSearchProvider implements WebSearchProvider {
       throw new WebError(`duckduckgo: search request failed: ${(error as Error).message}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
     if (!response.ok) throw new WebError(`duckduckgo: search returned HTTP ${response.status}`, 'WEB_PROVIDER_ERROR')
-    const sources = parseResults(await response.text())
+    const html = await response.text()
+    // DuckDuckGo answers rate-limited clients with HTTP 202 and a bot-check page instead of results.
+    if (response.status === 202 || html.includes('anomaly-modal')) {
+      throw new WebError('duckduckgo: DuckDuckGo showed its bot check instead of results (too many searches from this network); try again later', 'WEB_PROVIDER_ERROR')
+    }
+    const sources = parseResults(html)
     const limited = request.maxResults === undefined ? sources : sources.slice(0, request.maxResults)
     return { sources: limited, truncated: limited.length < sources.length }
   }
