@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { readPrimaryRuntime, workspaceDependencyPaths } from '../../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import { DesktopHostProcess } from '../src/host-process.ts'
-import { createPluginProfile } from '../src/project-manager.ts'
+import { createPluginProfile, DESKTOP_OFFLINE } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 /**
@@ -135,7 +135,7 @@ export function apply(ctx) {
   }
 }
 `)
-    writeFileSync(join(plugin, 'bundle.yml'), '- insert:\n    - id: desktop-runtime-smoke-plugin\n      name: desktop-runtime-smoke-plugin\n      inject: [webServer, officeToPdf, skills, pluginManager]\n')
+    writeFileSync(join(plugin, 'bundle.yml'), `- insert:\n    - id: desktop-runtime-smoke-plugin\n      name: desktop-runtime-smoke-plugin\n      inject: [webServer, officeToPdf, skills${DESKTOP_OFFLINE ? '' : ', pluginManager'}]\n`)
     cpSync(plugin, join(profile, 'node_modules', pluginName), { recursive: true })
     const manifest = JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
@@ -157,13 +157,16 @@ export function apply(ctx) {
     }
     const pluginResponse = await fetch(new URL('/desktop-smoke', ready.url), { headers: { cookie } })
     if (await pluginResponse.text() !== 'plugin route ready') throw new Error('desktop runtime: plugin HTTP route failed')
-    const installation = await fetch(new URL('/desktop-smoke-install', ready.url), {
-      headers: { cookie }, signal: AbortSignal.timeout(120_000),
-    })
-    const installationResult = await installation.text()
-    const installed = await fetch(new URL('/desktop-smoke-installed', ready.url), { headers: { cookie } })
-    if (!installation.ok || !installed.ok || await installed.text() !== 'installed plugin ready') {
-      throw new Error(`desktop runtime: bundled pnpm plugin installation failed: ${installationResult}`)
+    // The offline profile removes the npm-backed plugin manager, so in-app installation is not shipped.
+    if (!DESKTOP_OFFLINE) {
+      const installation = await fetch(new URL('/desktop-smoke-install', ready.url), {
+        headers: { cookie }, signal: AbortSignal.timeout(120_000),
+      })
+      const installationResult = await installation.text()
+      const installed = await fetch(new URL('/desktop-smoke-installed', ready.url), { headers: { cookie } })
+      if (!installation.ok || !installed.ok || await installed.text() !== 'installed plugin ready') {
+        throw new Error(`desktop runtime: bundled pnpm plugin installation failed: ${installationResult}`)
+      }
     }
     for (const { extension } of inputs) {
       const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
