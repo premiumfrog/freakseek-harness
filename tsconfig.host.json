@@ -480,6 +480,7 @@
     { "path": "./packages/llm/llm-local-gguf" },
     { "path": "./packages/web/web-search-duckduckgo" },
     { "path": "./packages/bundle/offline" },
+    { "path": "./packages/bundle/offline-app" },
     { "path": "./packages/llm/llm-deepseek-account" },
     { "path": "./packages/llm/llm-pi-ai" },
     { "path": "./packages/shell/bash-local" },
