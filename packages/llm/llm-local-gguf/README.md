@@ -35,7 +35,7 @@ Mount it beside `@deepseek-ai/dsh-llm`. The [`dsh-offline`](../../bundle/offline
 
 Put `.gguf` files in a model directory; the default is `$DSH_HOME/models`, and subdirectories are scanned two levels deep. Each supported file becomes a model whose id is its path relative to the directory without `.gguf`, for example `qwen/qwen2.5-7b-instruct-q4_k_m`. `listModels('local')` rescans the directories and inspects new or changed files; split-file shards after the first and multimodal projector files are skipped.
 
-The model id `default` selects the only supported model and fails with the list of ids when there are several. The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, and `unload()`; a successful `load` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed.
+The model id `default` selects the only supported model and fails with the list of ids when there are several. The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, `loadFile(path)`, and `unload()`; a successful `load` or `loadFile` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed. `loadFile` accepts an absolute path to a regular `.gguf` file anywhere on disk, appends it to `importedModelsFile`, and loads it; imported files join the catalog with the id `file:<absolute path without .gguf>` (forward slashes), so they never collide with directory ids, and a file a scanned directory already holds keeps its directory id.
 
 ### Configuration
 
@@ -51,6 +51,7 @@ The model id `default` selects the only supported model and fails with the list 
 | `threads` | `0` | Inference threads; `0` uses every core |
 | `temperature`, `topK`, `topP`, `minP`, `repeatPenalty` | `0.6`, `40`, `0.95`, `0.05`, `1` | Sampling controls; a request's `temperature` overrides the configured one |
 | `shutdownGraceMillis` | `3000` | Time the engine gets to exit when the plugin stops |
+| `importedModelsFile` | `$DSH_HOME/local-models/imported.json` | `{"version":1,"files":[…]}` list of files loaded with `loadFile`; an unreadable or malformed list is reported as a problem and lists nothing |
 
 ### Supported models
 
@@ -79,6 +80,7 @@ Engine failures surface as `LlmError` codes: `CONTEXT_WINDOW_EXCEEDED` when the 
 | [`src/request.ts`](src/request.ts) | Harness history to OpenAI-style template messages |
 | [`src/output-parser.ts`](src/output-parser.ts) | Incremental reasoning and tool-call extraction from raw model text |
 | [`src/adapter.ts`](src/adapter.ts) | `LlmAdapter` implementation |
+| [`src/imports.ts`](src/imports.ts) | Imported-file list: wire path validation, versioned JSON reading, atomic appends |
 | [`src/service.ts`](src/service.ts) | `localModels` Remote |
 
 ### Request translation

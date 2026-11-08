@@ -45,6 +45,8 @@ export interface Config {
   repeatPenalty: Volatile<number>
   /** Milliseconds the engine gets to exit on shutdown before it is killed. */
   shutdownGraceMillis: number
+  /** JSON list of GGUF files loaded from outside the model directories; omitted resolves to `$DSH_HOME/local-models/imported.json`. */
+  importedModelsFile?: string
 }
 
 export const Config = z.object({
@@ -62,6 +64,7 @@ export const Config = z.object({
   minP: z.number().min(0).max(1).default(0.05).volatile(),
   repeatPenalty: z.number().min(0.5).max(3).default(1).volatile(),
   shutdownGraceMillis: z.number().step(1).min(0).max(60_000).default(3000),
+  importedModelsFile: z.string(),
 })
 
 /**
@@ -149,4 +152,15 @@ export function samplingOf(config: Config): EngineSampling {
  */
 export function placementOf(config: Config): EnginePlacement {
   return config.gpuLayers === undefined ? { device: config.device } : { device: config.device, gpuLayers: config.gpuLayers }
+}
+
+/**
+ * Resolve the imported-models list.
+ * @param configured - `importedModelsFile` from configuration.
+ * @param env - launch environment, read for `DSH_HOME`.
+ * @returns the absolute file path.
+ */
+export function resolveImportedModelsFile(configured: string | undefined, env: Readonly<Record<string, string | undefined>>): string {
+  if (configured !== undefined && configured !== '') return resolve(expandHomePath(configured))
+  return join(resolveDshHome(undefined, env), 'local-models', 'imported.json')
 }

@@ -2038,6 +2038,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the snapshot after loading, or the failure reason.',
       },
       {
+        signature: '@Remote(\'loadFile\') async loadFile(path: string): Promise<LocalModelsFileResult>',
+        description: 'Add a GGUF file from anywhere on disk to the catalog, remember it across restarts, load it, and make it the default model of new conversations when the deployment has one.',
+        parameters: [{ name: 'path', description: 'absolute path to a `.gguf` file, such as one chosen in the desktop file dialog.' }],
+        returns: 'the model id and snapshot after loading, or the failure reason.',
+      },
+      {
         signature: '@Remote(\'unload\') async unload(): Promise<LocalModelsActionResult>',
         description: 'Release the loaded model\'s memory.',
         parameters: [],
@@ -7075,6 +7081,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalModelsActionResult',
     declaration: 'export type LocalModelsActionResult = {\n    readonly ok: true;\n    readonly snapshot: LocalModelsSnapshot;\n} | {\n    readonly ok: false;\n    readonly reason: string;\n    readonly snapshot: LocalModelsSnapshot;\n};',
+  },
+  {
+    name: 'LocalModelsFileResult',
+    declaration: 'export type LocalModelsFileResult = {\n    readonly ok: true;\n    readonly modelId: string;\n    readonly snapshot: LocalModelsSnapshot;\n} | {\n    readonly ok: false;\n    readonly reason: string;\n    readonly snapshot: LocalModelsSnapshot;\n};',
   },
   {
     name: 'LocalModelsSnapshot',

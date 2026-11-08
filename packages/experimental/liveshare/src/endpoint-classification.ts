@@ -217,6 +217,7 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'web/listProviders': 'owner-only', // owner web search and fetch settings
   'localModels/snapshot': 'owner-only', // owner local model catalog and engine state
   'localModels/load': 'owner-only', // loads a model into the owner's engine
+  'localModels/loadFile': 'owner-only', // imports a file from the owner's disk and loads it
   'localModels/unload': 'owner-only', // releases the owner's loaded model
   'agentPresets/list': 'owner-only', // owner agent presets
   'agentPresets/read': 'owner-only', // owner agent presets

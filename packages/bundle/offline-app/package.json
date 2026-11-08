@@ -36,6 +36,7 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-client-ui-code-mode": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-local-models": "workspace:*"
   },
   "peerDependencies": {

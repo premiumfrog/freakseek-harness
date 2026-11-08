@@ -2,6 +2,11 @@
 
 /** English copy. */
 export const en = {
+  loadFile: 'Load from file…',
+  'picker.choose': 'Choose a .gguf model file…',
+  'picker.loading': 'Loading…',
+  'picker.loaded': '{model}: choose another .gguf file',
+  'picker.failed': 'Could not load the model: {reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',
@@ -34,6 +39,11 @@ export type LocalModelsLocaleKey = keyof typeof en
 
 /** Simplified Chinese copy. */
 export const zh = {
+  loadFile: '从文件加载…',
+  'picker.choose': '选择 .gguf 模型文件…',
+  'picker.loading': '加载中…',
+  'picker.loaded': '{model}：选择其他 .gguf 文件',
+  'picker.failed': '无法加载模型：{reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',
@@ -63,6 +73,11 @@ export const zh = {
 
 /** Japanese copy. */
 export const ja = {
+  loadFile: 'ファイルから読み込む…',
+  'picker.choose': '.gguf モデルファイルを選択…',
+  'picker.loading': '読み込み中…',
+  'picker.loaded': '{model}：別の .gguf ファイルを選択',
+  'picker.failed': 'モデルを読み込めませんでした：{reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',
@@ -92,6 +107,11 @@ export const ja = {
 
 /** Spanish copy. */
 export const es = {
+  loadFile: 'Cargar desde archivo…',
+  'picker.choose': 'Elegir un archivo de modelo .gguf…',
+  'picker.loading': 'Cargando…',
+  'picker.loaded': '{model}: elegir otro archivo .gguf',
+  'picker.failed': 'No se pudo cargar el modelo: {reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',
@@ -121,6 +141,11 @@ export const es = {
 
 /** French copy. */
 export const fr = {
+  loadFile: 'Charger depuis un fichier…',
+  'picker.choose': 'Choisir un fichier de modèle .gguf…',
+  'picker.loading': 'Chargement…',
+  'picker.loaded': '{model} : choisir un autre fichier .gguf',
+  'picker.failed': 'Impossible de charger le modèle : {reason}',
   sizeGiB: '{size} Gio',
   sizeMiB: '{size} Mio',
   fileName: '{id}.gguf',
@@ -150,6 +175,11 @@ export const fr = {
 
 /** German copy. */
 export const de = {
+  loadFile: 'Aus Datei laden…',
+  'picker.choose': '.gguf-Modelldatei auswählen…',
+  'picker.loading': 'Wird geladen…',
+  'picker.loaded': '{model}: andere .gguf-Datei auswählen',
+  'picker.failed': 'Modell konnte nicht geladen werden: {reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',
@@ -179,6 +209,11 @@ export const de = {
 
 /** Russian copy. */
 export const ru = {
+  loadFile: 'Загрузить из файла…',
+  'picker.choose': 'Выбрать файл модели .gguf…',
+  'picker.loading': 'Загрузка…',
+  'picker.loaded': '{model}: выбрать другой файл .gguf',
+  'picker.failed': 'Не удалось загрузить модель: {reason}',
   sizeGiB: '{size} ГиБ',
   sizeMiB: '{size} МиБ',
   fileName: '{id}.gguf',
@@ -208,6 +243,11 @@ export const ru = {
 
 /** Portuguese copy. */
 export const pt = {
+  loadFile: 'Carregar de arquivo…',
+  'picker.choose': 'Escolher um arquivo de modelo .gguf…',
+  'picker.loading': 'Carregando…',
+  'picker.loaded': '{model}: escolher outro arquivo .gguf',
+  'picker.failed': 'Não foi possível carregar o modelo: {reason}',
   sizeGiB: '{size} GiB',
   sizeMiB: '{size} MiB',
   fileName: '{id}.gguf',

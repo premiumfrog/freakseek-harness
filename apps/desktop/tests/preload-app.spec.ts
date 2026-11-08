@@ -108,19 +108,23 @@ it('exposes asynchronous boot only to the local application document', async () 
   expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === 'dshDesktopBoot')).toBe(false)
 })
 
-it('exposes a directory picker only to the local application document', async () => {
+it.each([
+  ['__DSH_DIRECTORY_PICKER__', DESKTOP_IPC.directoryPick],
+  ['__DSH_GGUF_PICKER__', DESKTOP_IPC.ggufPick],
+])('exposes %s only to the local application document', async (global, channel) => {
   vi.stubGlobal('location', new URL('dsh-app://app/'))
   await import('../src/preload-app.ts')
-  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === '__DSH_DIRECTORY_PICKER__')?.[1] as { pick(): Promise<string | null> }
+  const exposed = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === global)
+  const api = exposed?.[1] as { pick(): Promise<string | null> }
   electron.ipcRenderer.invoke.mockResolvedValue('/workspace')
   await expect(api.pick()).resolves.toBe('/workspace')
-  expect(electron.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.directoryPick)
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(channel)
   for (const url of ['dsh-app://shell/startup.html', 'https://example.com/']) {
     vi.resetModules()
     electron.contextBridge.exposeInMainWorld.mockClear()
     vi.stubGlobal('location', new URL(url))
     await import('../src/preload-app.ts')
-    expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === '__DSH_DIRECTORY_PICKER__')).toBe(false)
+    expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === global)).toBe(false)
   }
 })
 

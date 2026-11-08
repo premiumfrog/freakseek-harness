@@ -1,9 +1,9 @@
 /** A Loader-booted `local` route lists GGUF files and streams replies from the real engine process. */
 
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -65,6 +65,7 @@ async function boot(): Promise<{ ctx: Context; models: string }> {
     '  config:',
     `    enginePath: ${JSON.stringify(ENGINE)}`,
     `    modelDirectories: [${JSON.stringify(models)}]`,
+    `    importedModelsFile: ${JSON.stringify(join(root, 'imported.json'))}`,
     '    contextLength: 512',
     '    temperature: 0',
     '    threads: 2',
@@ -155,6 +156,42 @@ it('answers the default model id with the only supported model and names the cho
   const several = await collect(ctx.llm.stream({ ...request('hello'), model: 'default' }))
   expect(several.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'LOCAL_UNKNOWN_MODEL' } } })
   expect(JSON.stringify(several.at(-1))).toContain('family/bigram-hi, second')
+})
+
+it('loads a GGUF file from outside the model directories and keeps it in the catalog after a restart', async () => {
+  const { ctx } = await boot()
+  const outside = join(root!, 'elsewhere', 'picked.gguf')
+  await mkdir(dirname(outside), { recursive: true })
+  await writeBigramModel(outside, 'Picked!')
+  const picked = await ctx.localModels.loadFile(outside)
+  const id = `file:${outside.split('\\').join('/').replace(/\.gguf$/u, '')}`
+  expect(picked).toMatchObject({ ok: true, modelId: id, snapshot: { state: { kind: 'loaded', modelId: id } } })
+  const reply = await collect(ctx.llm.stream({ ...request('hello'), model: id }))
+  const assembler = new BlockAssembler()
+  for (const chunk of reply) assembler.push(chunk)
+  expect(assembler.blocks()).toEqual([{ type: 'text', text: 'Picked!' }])
+  // Importing the same file again keeps one entry.
+  expect(await ctx.localModels.loadFile(outside)).toMatchObject({ ok: true, modelId: id })
+  expect(JSON.parse(await readFile(join(root!, 'imported.json'), 'utf8'))).toEqual({ version: 1, files: [outside] })
+
+  await context?.fiber.dispose()
+  const first = root!
+  const imports = await readFile(join(first, 'imported.json'), 'utf8')
+  try {
+    const { ctx: restarted } = await boot()
+    await writeFile(join(root!, 'imported.json'), imports)
+    expect((await restarted.llm.listModels('local')).map(m => m.id)).toContain(id)
+  } finally {
+    await rm(first, { recursive: true, force: true })
+  }
+})
+
+it('refuses a path that is not an absolute, existing .gguf file without importing it', async () => {
+  const { ctx, models } = await boot()
+  for (const path of ['relative.gguf', join(models, 'missing.gguf'), join(models, 'family'), join(root!, 'cordis.yml')]) {
+    expect(await ctx.localModels.loadFile(path)).toMatchObject({ ok: false })
+  }
+  await expect(readFile(join(root!, 'imported.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('stops the engine process when the plugin is disposed', async () => {

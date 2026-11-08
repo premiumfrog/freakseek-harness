@@ -1,0 +1,52 @@
+/* Same chip as the model selector it replaces: 28px tall, 13/20 regular secondary label. */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 360px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .trigger:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.trigger[data-failed] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The composer owns these display variables when the row cannot fit the text. */
+.icon {
+  display: var(--dsh-composer-model-icon-display, none);
+  flex: 0 0 auto;
+}
+
+.label {
+  display: var(--dsh-composer-model-text-display, block);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { LOCAL_PROVIDER } from './adapter.ts'
 import type { LocalModelRuntime } from './runtime.ts'
-import type { LocalModelsActionResult, LocalModelsSnapshot } from './types.ts'
+import type { LocalModelsActionResult, LocalModelsFileResult, LocalModelsSnapshot } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -51,6 +51,23 @@ export class LocalModelsService extends TypertRemoteService {
       await this.runtime.load(modelId)
       await this.ctx.get('agentDefaultModel')?.saveSelection({ provider: LOCAL_PROVIDER, model: modelId })
       return { ok: true, snapshot: this.runtime.snapshot() }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message, snapshot: this.runtime.snapshot() }
+    }
+  }
+
+  /**
+   * Add a GGUF file from anywhere on disk to the catalog, remember it across restarts, load it, and make it the
+   * default model of new conversations when the deployment has one.
+   * @param path - absolute path to a `.gguf` file, such as one chosen in the desktop file dialog.
+   * @returns the model id and snapshot after loading, or the failure reason.
+   */
+  @Remote('loadFile')
+  async loadFile(path: string): Promise<LocalModelsFileResult> {
+    try {
+      const modelId = await this.runtime.loadFile(path)
+      await this.ctx.get('agentDefaultModel')?.saveSelection({ provider: LOCAL_PROVIDER, model: modelId })
+      return { ok: true, modelId, snapshot: this.runtime.snapshot() }
     } catch (error) {
       return { ok: false, reason: (error as Error).message, snapshot: this.runtime.snapshot() }
     }

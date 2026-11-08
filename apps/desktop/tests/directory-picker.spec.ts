@@ -7,11 +7,16 @@ const electron = vi.hoisted(() => ({
   showOpenDialog: vi.fn<(window: BrowserWindow, options: unknown) => Promise<OpenDialogReturnValue>>(),
 }))
 vi.mock('electron', () => ({ ipcMain: { handle: electron.handle }, dialog: electron }))
-const { installDesktopDirectoryPicker } = await import('../src/directory-picker.ts')
+const { GGUF_PICKER_OPTIONS, installDesktopDirectoryPicker, installDesktopGgufPicker } = await import('../src/directory-picker.ts')
+
+const pickers = [
+  { name: 'directory', install: installDesktopDirectoryPicker, channel: DESKTOP_IPC.directoryPick, options: { properties: ['openDirectory', 'createDirectory'] } },
+  { name: 'GGUF model file', install: installDesktopGgufPicker, channel: DESKTOP_IPC.ggufPick, options: GGUF_PICKER_OPTIONS },
+] as const
 
 beforeEach(() => { vi.resetAllMocks() })
 
-function fixture() {
+function fixture(picker: (typeof pickers)[number]) {
   const frame = { url: 'dsh-app://app/' }
   const window = {
     webContents: { mainFrame: frame },
@@ -22,22 +27,22 @@ function fixture() {
     focus: vi.fn(),
   }
   let current: BrowserWindow | undefined = window as unknown as BrowserWindow
-  installDesktopDirectoryPicker(() => current)
-  expect(electron.handle.mock.calls[0]?.[0]).toBe(DESKTOP_IPC.directoryPick)
+  picker.install(() => current)
+  expect(electron.handle.mock.calls[0]?.[0]).toBe(picker.channel)
   const handler = electron.handle.mock.calls[0]![1]
   const event = { sender: window.webContents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   return { window, frame, event, handler, detach: () => { current = undefined } }
 }
 
-describe('Desktop directory picker', () => {
+describe.each(pickers)('Desktop $name picker', (picker) => {
   it('restores and focuses the parent window and shares an unanswered dialog', async () => {
-    const f = fixture()
+    const f = fixture(picker)
     f.window.isMinimized.mockReturnValue(true)
     let settle!: (value: OpenDialogReturnValue) => void
     electron.showOpenDialog.mockImplementation(() => new Promise((resolve) => { settle = resolve }))
     const first = f.handler(f.event)
     const second = f.handler(f.event)
-    expect(electron.showOpenDialog).toHaveBeenCalledExactlyOnceWith(f.window, { properties: ['openDirectory', 'createDirectory'] })
+    expect(electron.showOpenDialog).toHaveBeenCalledExactlyOnceWith(f.window, picker.options)
     expect(f.window.restore).toHaveBeenCalledOnce()
     expect(f.window.show).toHaveBeenCalledOnce()
     expect(f.window.focus).toHaveBeenCalledOnce()
@@ -49,7 +54,7 @@ describe('Desktop directory picker', () => {
   })
 
   it('releases a failed dialog so the user can retry', async () => {
-    const f = fixture()
+    const f = fixture(picker)
     electron.showOpenDialog.mockRejectedValueOnce(new Error('chooser failed'))
     await expect(f.handler(f.event)).rejects.toThrow('chooser failed')
     electron.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [] })
@@ -57,7 +62,7 @@ describe('Desktop directory picker', () => {
   })
 
   it('discards the selected path after the parent is destroyed', async () => {
-    const f = fixture()
+    const f = fixture(picker)
     electron.showOpenDialog.mockImplementation(async () => {
       f.window.isDestroyed.mockReturnValue(true)
       return { canceled: false, filePaths: ['/workspace'] }
@@ -66,7 +71,7 @@ describe('Desktop directory picker', () => {
   })
 
   it('rejects other windows, subframes, shell pages, remote pages, and missing windows', async () => {
-    const f = fixture()
+    const f = fixture(picker)
     await expect(f.handler({ ...f.event, sender: {} } as IpcMainInvokeEvent)).rejects.toThrow('unowned renderer')
     await expect(f.handler({ ...f.event, senderFrame: {} } as IpcMainInvokeEvent)).rejects.toThrow('unowned renderer')
     for (const url of ['dsh-app://shell/startup.html', 'https://example.com/', 'http://127.0.0.1/']) {

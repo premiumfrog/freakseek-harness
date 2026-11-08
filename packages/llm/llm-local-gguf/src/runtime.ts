@@ -9,8 +9,9 @@
  */
 
 import { readdir, stat } from 'node:fs/promises'
-import { basename, join, relative, sep } from 'node:path'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { EngineError, EngineProcess } from './engine-process.ts'
+import { addImport, importedModelId, readImports, validateModelFile } from './imports.ts'
 import type { GenerateHandlers } from './engine-process.ts'
 import type { EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, LocalModelEntry, LocalModelsSnapshot, LocalModelsState } from './types.ts'
 
@@ -32,6 +33,8 @@ export interface RuntimeSettings {
   contextLength(): number
   /** KV cache slots kept per loaded model. */
   cacheSlots(): number
+  /** JSON file listing GGUF files loaded from outside the model directories. */
+  importsFile(): string
   /** Compute device and GPU layer count requested at load. */
   placement(): EnginePlacement
   shutdownGraceMillis(): number
@@ -62,6 +65,8 @@ export class LocalModelRuntime {
   private loaded: { readonly modelId: string; readonly path: string; readonly contextLength: number } | undefined
   private state: LocalModelsState = { kind: 'idle' }
   private disposed = false
+  /** Orders read-modify-write updates of the imports file. */
+  private importing: Promise<unknown> = Promise.resolve()
 
   /**
    * @param settings - live settings readers.
@@ -145,7 +150,7 @@ export class LocalModelRuntime {
   async refresh(): Promise<readonly LocalModelEntry[]> {
     const entries: LocalModelEntry[] = []
     const problems: { directory: string; reason: string }[] = []
-    const files: { directory: string; path: string }[] = []
+    const files: { directory: string; path: string; imported?: true }[] = []
     for (const directory of this.settings.directories()) {
       try {
         for (const path of await ggufFiles(directory, 2)) files.push({ directory, path })
@@ -155,9 +160,24 @@ export class LocalModelRuntime {
         if (code !== 'ENOENT') problems.push({ directory, reason: (error as Error).message })
       }
     }
-    for (const { directory, path } of files) {
+    const importsFile = this.settings.importsFile()
+    try {
+      for (const path of await readImports(importsFile)) {
+        // An import that a scanned directory already lists keeps its directory id.
+        if (files.some(f => f.path === path)) continue
+        try { await stat(path) }
+        catch (error) {
+          problems.push({ directory: path, reason: (error as Error).message })
+          continue
+        }
+        files.push({ directory: dirname(path), path, imported: true })
+      }
+    } catch (error) {
+      problems.push({ directory: importsFile, reason: (error as Error).message })
+    }
+    for (const { directory, path, imported } of files) {
       const facts = await this.inspect(path)
-      const id = relative(directory, path).split(sep).join('/').replace(/\.gguf$/iu, '')
+      const id = imported === true ? importedModelId(path) : relative(directory, path).split(sep).join('/').replace(/\.gguf$/iu, '')
       if (entries.some(e => e.id === id)) continue
       if ('error' in facts) {
         const size = this.facts.get(path)?.size ?? 0
@@ -204,6 +224,23 @@ export class LocalModelRuntime {
     }
     this.facts.set(path, { size: info.size, mtimeMs: info.mtimeMs, facts })
     return facts
+  }
+
+  /**
+   * Add a GGUF file from anywhere on disk to the catalog, remember it, and load it.
+   * @param path - absolute `.gguf` path received from a configuration surface.
+   * @returns the model's catalog id.
+   * @throws EngineError `INVALID_MODEL_FILE` for a path that is not a readable `.gguf` file, or any load failure.
+   */
+  async loadFile(path: unknown): Promise<string> {
+    const file = await validateModelFile(path)
+    const added = this.importing.then(() => addImport(this.settings.importsFile(), file))
+    this.importing = added.catch((_reportedToCaller: unknown) => {})
+    await added
+    const entry = (await this.refresh()).find(e => e.path === file)
+    if (entry === undefined) throw new EngineError('INVALID_MODEL_FILE', `${file} did not enter the local model catalog`)
+    await this.load(entry.id)
+    return entry.id
   }
 
   /**

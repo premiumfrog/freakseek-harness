@@ -1207,6 +1207,14 @@ Remote service over one plugin instance's LocalModelRuntime.
 @Remote('load') async load(modelId: string): Promise<LocalModelsActionResult>
 
 /**
+ * Add a GGUF file from anywhere on disk to the catalog, remember it across restarts, load it, and make it the
+ * default model of new conversations when the deployment has one.
+ * @param path - absolute path to a `.gguf` file, such as one chosen in the desktop file dialog.
+ * @returns the model id and snapshot after loading, or the failure reason.
+ */
+@Remote('loadFile') async loadFile(path: string): Promise<LocalModelsFileResult>
+
+/**
  * Release the loaded model's memory.
  * @returns the snapshot after unloading, or the failure reason.
  */

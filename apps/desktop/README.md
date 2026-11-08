@@ -149,7 +149,7 @@ Only the main application window enables `<webview>`. Guest attachment must matc
 
 The `dsh-app://shell/` origin serves packaged update documents, scripts, and styles without contacting the Host. Static requests retain GET/HEAD, path-containment, and MIME handling; each update document keeps its isolated preload and owned-window IPC checks.
 
-The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles.
+The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles. The application document also receives `__DSH_GGUF_PICKER__`, the window-owned native open dialog filtered to `.gguf` files, which the Local models page and the composer's model control use to load a model from anywhere on disk.
 
 Update copy preserves the complete version, including prerelease suffixes, without adding v or V. When no update is available, the dialog title reports the result and the body shows the current version.
 

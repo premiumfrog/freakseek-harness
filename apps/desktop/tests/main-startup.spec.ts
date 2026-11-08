@@ -218,7 +218,8 @@ const harness = await vi.hoisted(async () => {
     failWindow(error: Error) { windowFailure = error },
     windows, views, hosts, handlers, app, FakeWindow, FakeView, FakeHost, powerMonitor, nativeTheme, analytics,
     trays, FakeTray, backgroundNotice, shellDialog,
-    menu, popup, socketHeaders: vi.fn(), connectWelcome: vi.fn(), removeLegacyHostCookies: vi.fn(async () => {}), hostCookies: {},
+    menu, popup, socketHeaders: vi.fn(), offlineRequests: vi.fn(),
+    connectWelcome: vi.fn(), removeLegacyHostCookies: vi.fn(async () => {}), hostCookies: {},
     loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
     platformDispose,
     platformCloseAndWait,
@@ -323,7 +324,7 @@ vi.mock('electron', () => ({
   session: { defaultSession: {
     on: vi.fn(), cookies: harness.hostCookies,
     setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(),
-    webRequest: { onBeforeSendHeaders: harness.socketHeaders, onBeforeRequest: vi.fn() },
+    webRequest: { onBeforeSendHeaders: harness.socketHeaders, onBeforeRequest: harness.offlineRequests },
   } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
@@ -1438,8 +1439,7 @@ describe('desktop main startup', () => {
   it('confines the application session and needs no provider key in the offline profile', async () => {
     desktopMode.offline = true
     await readyForUpdate()
-    const { session } = await import('electron')
-    expect(session.defaultSession.webRequest.onBeforeRequest).toHaveBeenCalledOnce()
+    expect(harness.offlineRequests).toHaveBeenCalledOnce()
     const window = harness.windows[0]!
     const handler = harness.handlers.get(DESKTOP_IPC.onboardingApiKey)!
     harness.hosts.at(-1)!.fetch.mockClear()
@@ -1479,8 +1479,12 @@ describe('desktop main startup', () => {
     harness.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/workspace'] })
     await expect(handler(event)).resolves.toBe('/workspace')
     expect(harness.dialog.showOpenDialog).toHaveBeenCalledExactlyOnceWith(window, { properties: ['openDirectory', 'createDirectory'] })
+    const gguf = harness.handlers.get(DESKTOP_IPC.ggufPick) as (event: IpcMainInvokeEvent) => Promise<string | null>
+    harness.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/models/m.gguf'] })
+    await expect(gguf(event)).resolves.toBe('/models/m.gguf')
     window.webContents.mainFrame.url = 'https://other.example/'
     await expect(handler(event)).rejects.toThrow('unowned renderer')
+    await expect(gguf(event)).rejects.toThrow('unowned renderer')
   })
 
   it('holds boot injections until the Host is ready and rejects foreign boot callers', async () => {

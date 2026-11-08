@@ -437,6 +437,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   LlmImageRequestPricing: 'llm-streaming.md',
   LlmModelInfo: 'llm-streaming.md',
   LocalModelsActionResult: 'llm-streaming.md',
+  LocalModelsFileResult: 'llm-streaming.md',
   LocalModelsSnapshot: 'llm-streaming.md',
   LlmProviderInfo: 'llm-streaming.md',
   LlmConfigurableProvider: 'llm-streaming.md',

@@ -104,6 +104,9 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
     pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
   })
+  contextBridge.exposeInMainWorld('__DSH_GGUF_PICKER__', {
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.ggufPick) as Promise<string | null>,
+  })
   // The composer cites dropped, picked, and pasted files and folders that
   // have a real path as `@path` references instead of uploading them; a
   // File without one (pasted bytes) answers '' and uploads as before.

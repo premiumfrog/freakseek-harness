@@ -1,13 +1,13 @@
 /** The Local models section: registration, refresh triggers, and load and unload outcomes. */
 
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject, NS } from '../src/client/index.ts'
-import type { LocalModelsSectionInjected } from '../src/client/index.ts'
+import type { LocalModelsSectionInjected, ModelFileButtonInjected } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 const model = {
@@ -17,7 +17,8 @@ const model = {
 const idle = { state: { kind: 'idle' }, directories: ['/m'], models: [model], problems: [] }
 const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0 } }
 
-async function bench() {
+async function bench(picker?: { pick: () => Promise<string | null> }) {
+  if (picker !== undefined) vi.stubGlobal('__DSH_GGUF_PICKER__', picker)
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -26,15 +27,23 @@ async function bench() {
   const snapshot = vi.fn(() => Promise.resolve({ ok: true, value: idle }))
   const load = vi.fn(() => Promise.resolve({ ok: true, value: { ok: true, snapshot: loaded } }))
   const unload = vi.fn(() => Promise.resolve({ ok: false, error: new RemoteError('gateway/internal', 'host gone', {}) }))
-  const remote = new TestRemote(ctx, { localModels: { snapshot, load, unload } })
+  const picked = { ok: true, modelId: 'file:/picked/m', snapshot: loaded }
+  const loadFile = vi.fn((_path: string) => Promise.resolve({ ok: true, value: picked }))
+  type Selection = { sessionId: string; provider: string; model: string }
+  const selectModel = vi.fn((_request: Selection) => Promise.resolve({ ok: true, value: undefined }))
+  const remote = new TestRemote(ctx, { localModels: { snapshot, load, loadFile, unload }, session: { selectModel } })
   const slots = ctx.get('slots') as SlotRegistry
-  slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' } } } as never, () => null)
+  slots.register({ name: 'root', children: {
+    'settings.section': { kind: 'list', scope: 'root' }, 'conversation.input.model': { kind: 'single', scope: 'session' },
+  } } as never, () => null)
   await ctx.plugin({ inject: [...inject], apply }).await()
   await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
   const entry = slots.entries('settings.section')[0]!
   const face = (entry.inject as () => LocalModelsSectionInjected)()
-  return { ctx, entry, face, snapshot, load, unload, remote }
+  return { ctx, entry, face, snapshot, load, loadFile, unload, selectModel, remote, slots }
 }
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 describe('ui-settings-local-models apply', () => {
   it('keeps the host Loader entry inert and declares its services', () => {
@@ -67,6 +76,44 @@ describe('ui-settings-local-models apply', () => {
     expect(face.hooks.models.getSnapshot().pending).toBeUndefined()
     face.unload()
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('host gone') })
+  })
+
+  it('offers no file flows outside the desktop app', async () => {
+    const { face, slots } = await bench()
+    expect(face.loadFile).toBeUndefined()
+    expect(slots.entries('conversation.input.model')).toHaveLength(0)
+  })
+
+  it('loads a file chosen in the desktop dialog and switches the conversation to it', async () => {
+    const pick = vi.fn<() => Promise<string | null>>().mockResolvedValueOnce('/picked/m.gguf').mockResolvedValueOnce(null)
+    const { face, slots, loadFile, selectModel } = await bench({ pick })
+    await vi.waitFor(() => { expect(slots.entries('conversation.input.model')).toHaveLength(1) })
+    const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
+    seat.pick()
+    await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-1', provider: 'local', model: 'file:/picked/m' }) })
+    expect(loadFile).toHaveBeenCalledWith('/picked/m.gguf')
+    expect(face.hooks.models.getSnapshot()).toMatchObject({ snapshot: loaded })
+    // A cancelled dialog changes nothing.
+    face.loadFile?.()
+    await vi.waitFor(() => { expect(pick).toHaveBeenCalledTimes(2) })
+    expect(loadFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the reason when the file cannot load or the conversation cannot switch', async () => {
+    const pick = vi.fn(() => Promise.resolve('/picked/m.gguf'))
+    const { slots, loadFile, selectModel, face } = await bench({ pick })
+    await vi.waitFor(() => { expect(slots.entries('conversation.input.model')).toHaveLength(1) })
+    const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
+    loadFile.mockResolvedValueOnce({ ok: true, value: { ok: false, reason: 'unsupported architecture', snapshot: idle } } as never)
+    seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('unsupported architecture') })
+    expect(selectModel).not.toHaveBeenCalled()
+    selectModel.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'session busy', {}) } as never)
+    seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('session busy') })
+    pick.mockRejectedValueOnce(new Error('dialog failed'))
+    face.loadFile?.()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('dialog failed') })
   })
 
   it('reports a Host without local models', async () => {

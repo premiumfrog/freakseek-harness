@@ -1,8 +1,8 @@
 # The dsh-offline-app bundle patch: layered after dsh-web-app and dsh-offline in
 # the desktop composition, it removes the Web app rows that contact a remote
 # service on their own (account sign-in, product telemetry and analytics, and
-# npm-backed plugin installation), removes the sidebar web-browser tabs, and
-# adds the Local models settings page.
+# npm-backed plugin installation), removes the sidebar web-browser tabs and the
+# catalog model selector, and adds the Local models page and code mode.
 
 - id: account-controller
   disabled: true
@@ -19,6 +19,15 @@
 - id: ui-sidebar-browser
   disabled: true
 
+# The composer's model control opens a .gguf file dialog (ui-settings-local-models),
+# so the catalog selector and its /model popup give up the seat.
+- id: ui-model-selection
+  disabled: true
+
 - insert:
     - id: ui-settings-local-models
       name: '@deepseek-ai/dsh-client-ui-settings-local-models'
+
+    # The Code toggle: the workspace files page beside a terminal in the right Sidebar.
+    - id: ui-code-mode
+      name: '@deepseek-ai/dsh-client-ui-code-mode'

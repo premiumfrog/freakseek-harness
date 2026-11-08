@@ -12,13 +12,19 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: the conversation SlotMap merge (the composer's 'conversation.input.model' seat).
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { LocalModelsController } from './controller.ts'
+import type { ModelFilePicker } from './controller.ts'
+import { ModelFileButton } from './ModelFileButton.tsx'
+import type { ModelFileButtonInjected } from './ModelFileButton.tsx'
 import { LocalModelsSection } from './LocalModelsSection.tsx'
 import type { LocalModelsSectionInjected } from './LocalModelsSection.tsx'
 import { de, en, es, fr, ja, pt, ru, zh } from './locales.ts'
 
 export type { LocalModelsSectionInjected, LocalModelsSectionProps } from './LocalModelsSection.tsx'
-export type { LocalModelsPageState } from './controller.ts'
+export type { LocalModelsPageState, ModelFilePicker } from './controller.ts'
+export type { ModelFileButtonInjected, ModelFileButtonProps } from './ModelFileButton.tsx'
 export type { LocalModelsLocaleKey } from './locales.ts'
 
 /** Dictionary namespace owned by this plugin. */
@@ -45,12 +51,34 @@ export function apply(ctx: ClientContext): void {
     controller.refresh()
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings-local-models: invalidations')
+  // The desktop preload exposes the native GGUF dialog; elsewhere the file flows are absent.
+  const picker = (globalThis as typeof globalThis & { __DSH_GGUF_PICKER__?: ModelFilePicker }).__DSH_GGUF_PICKER__
   const injected = (): LocalModelsSectionInjected => ({
     hooks: { models: controller.store },
     refresh: () => { controller.refresh() },
     load: (modelId) => { void controller.load(modelId) },
+    ...picker === undefined ? {} : { loadFile: () => { void controller.loadFile(picker) } },
     unload: () => { void controller.unload() },
   })
+  if (picker !== undefined) {
+    // The composer's model seat opens the file dialog, then switches its conversation to the loaded model.
+    ctx.inject(['remote.session'], (scope: ClientContext) => {
+      scope.slots.inject('conversation.input.model', () => scope.slots.register({
+        name: 'conversation.input.model',
+        locale: NS,
+        inject: (sessionId): ModelFileButtonInjected => ({
+          hooks: { models: controller.store },
+          pick: () => {
+            void controller.loadFile(picker).then(async (modelId) => {
+              if (modelId === undefined) return
+              const selected = await scope.remote.session.selectModel({ sessionId, provider: 'local', model: modelId })
+              if (!selected.ok) controller.fail(selected.error.message)
+            })
+          },
+        }),
+      }, ModelFileButton))
+    })
+  }
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'local-models',

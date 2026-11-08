@@ -45,7 +45,9 @@ async function bench(options: { open?: readonly SidebarRightOpenTab[]; kinds?: r
   await ctx.plugin({ inject: [...inject], apply }).await()
   await vi.waitFor(() => { expect(slots.entries('conversation.session.header.utilities')).toHaveLength(1) })
   const entry = slots.entries('conversation.session.header.utilities')[0]!
-  const face = (entry.inject as () => CodeModeButtonInjected)()
+  const injectFace = entry.inject
+  if (injectFace === undefined) throw new Error('code mode registered no inject face')
+  const face = injectFace() as CodeModeButtonInjected
   return { ctx, entry, face, sidebar, register }
 }
 

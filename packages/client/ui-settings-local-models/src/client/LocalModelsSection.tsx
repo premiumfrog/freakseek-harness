@@ -15,6 +15,8 @@ export type LocalModelsSectionInjected = {
   }
   refresh: () => void
   load: (modelId: string) => void
+  /** Open the desktop file dialog and load the chosen GGUF file; absent outside the desktop app. */
+  loadFile?: () => void
   unload: () => void
 }
 
@@ -38,7 +40,7 @@ function parameterCount(count: number): string {
 }
 
 /** Render the section. */
-export function LocalModelsSection({ t, useModels, refresh, load, unload }: LocalModelsSectionProps) {
+export function LocalModelsSection({ t, useModels, refresh, load, loadFile, unload }: LocalModelsSectionProps) {
   const page = useModels(value => value)
   const snapshot = page.snapshot
   const state = snapshot?.state
@@ -84,7 +86,14 @@ export function LocalModelsSection({ t, useModels, refresh, load, unload }: Loca
     <div className={css.section}>
       <div className={css.header}>
         <h2 className={css.heading}>{t('title')}</h2>
-        <Button variant="outline" size="sm" disabled={busy} onClick={refresh}>{t('refresh')}</Button>
+        <div className={css.headerActions}>
+          {loadFile !== undefined && (
+            <Button variant="primary" size="sm" disabled={busy} onClick={loadFile}>
+              {page.pending === 'file' ? t('picker.loading') : t('loadFile')}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" disabled={busy} onClick={refresh}>{t('refresh')}</Button>
+        </div>
       </div>
       <p className={css.intro}>{t('intro')}</p>
       {page.unavailable && <p className={css.problem}>{t('unavailable')}</p>}

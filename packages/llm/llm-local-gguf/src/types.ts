@@ -162,6 +162,11 @@ export interface LocalModelsSnapshot {
   readonly problems: readonly { readonly directory: string; readonly reason: string }[]
 }
 
+/** Outcome of loading a GGUF file chosen on disk. */
+export type LocalModelsFileResult =
+  | { readonly ok: true; readonly modelId: string; readonly snapshot: LocalModelsSnapshot }
+  | { readonly ok: false; readonly reason: string; readonly snapshot: LocalModelsSnapshot }
+
 /** Outcome of a load or unload request from a configuration surface. */
 export type LocalModelsActionResult =
   | { readonly ok: true; readonly snapshot: LocalModelsSnapshot }

@@ -13,7 +13,8 @@ import type { NS } from './locales.ts'
 import css from './CodeModeButton.module.css'
 
 /** Injected state and command of the toggle. */
-export interface CodeModeButtonInjected {
+// A type alias, not an interface, so it satisfies the slot runtime's record-typed inject face.
+export type CodeModeButtonInjected = {
   readonly hooks: {
     /** Sessions in code mode. */
     readonly active: HostObservable<ReadonlySet<SessionId>>

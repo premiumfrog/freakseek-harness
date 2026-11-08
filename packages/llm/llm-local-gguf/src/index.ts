@@ -8,11 +8,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
-import { Config, placementOf, resolveEnginePath, resolveModelDirectories, samplingOf } from './config.ts'
+import { Config, placementOf, resolveEnginePath, resolveImportedModelsFile, resolveModelDirectories, samplingOf } from './config.ts'
 import { LocalModelRuntime } from './runtime.ts'
 import { LocalModelsService } from './service.ts'
 
-export { Config, ENGINE_ENV, engineFileName, resolveEnginePath, resolveModelDirectories } from './config.ts'
+export { Config, ENGINE_ENV, engineFileName, resolveEnginePath, resolveImportedModelsFile, resolveModelDirectories } from './config.ts'
 export { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
 export { EngineError, EngineProcess, ENGINE_PROTOCOL_VERSION } from './engine-process.ts'
 export { OutputParser } from './output-parser.ts'
@@ -45,6 +45,7 @@ export function apply(ctx: Context, config: Config): void {
     contextLength: () => config.contextLength.get(),
     cacheSlots: () => config.cacheSlots,
     placement: () => placementOf(config),
+    importsFile: () => resolveImportedModelsFile(config.importedModelsFile, env),
     shutdownGraceMillis: () => config.shutdownGraceMillis,
   }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) })
   ctx.effect(() => () => runtime.dispose(), 'llm-local-gguf: engine process')

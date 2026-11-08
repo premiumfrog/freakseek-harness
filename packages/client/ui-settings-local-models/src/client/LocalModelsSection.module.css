@@ -15,6 +15,12 @@
   gap: 12px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .heading {
   margin: 0;
   font-size: 18px;
