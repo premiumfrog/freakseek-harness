@@ -27,6 +27,7 @@ import {
   PluginPackages,
   PROFILE_PATCH_FILENAME,
   resolveProfileDir,
+  StartupError,
   type ProfileContext,
   type Profile,
   type RuntimeResolution,
@@ -259,7 +260,15 @@ export interface RunProfileOptions {
   args: readonly string[]
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
+  /**
+   * The caller embeds the Web app in its own window (the desktop host). FreakSeek ships no browser
+   * surface, so a launch without this flag refuses profiles that serve the Web app.
+   */
+  embeddedWebApp?: boolean
 }
+
+/** Bundle whose presence makes a profile serve the Web app. */
+const WEB_APP_BUNDLE = '@deepseek-ai/dsh-web-app'
 
 /**
  * Boot one profile invocation end to end and leave process lifetime to the
@@ -292,6 +301,12 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const composed = await composeProfile(
       options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
     )
+    if (options.embeddedWebApp !== true && composed.profile.layers.some(layer => layer.packageName === WEB_APP_BUNDLE)) {
+      throw new StartupError(
+        `${NAME}: profile "${options.profile}" serves the browser Web UI, which FreakSeek does not ship; use the desktop app, or run tasks with \`dsh --profile cli "<task>"\``,
+        [],
+      )
+    }
     const appReady = createAppReady()
     const shutdown = createProcessShutdown(dispose)
     const signalShutdown = new AbortController()

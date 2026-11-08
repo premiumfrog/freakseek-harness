@@ -35,7 +35,7 @@ Mount it beside `@deepseek-ai/dsh-llm`. The [`dsh-offline`](../../bundle/offline
 
 Put `.gguf` files in a model directory; the default is `$DSH_HOME/models`, and subdirectories are scanned two levels deep. Each supported file becomes a model whose id is its path relative to the directory without `.gguf`, for example `qwen/qwen2.5-7b-instruct-q4_k_m`. `listModels('local')` rescans the directories and inspects new or changed files; split-file shards after the first and multimodal projector files are skipped.
 
-The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, and `unload()`; a successful `load` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed.
+The model id `default` selects the only supported model and fails with the list of ids when there are several. The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, and `unload()`; a successful `load` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed.
 
 ### Configuration
 

@@ -1,6 +1,6 @@
 # FreakSeek
 
-**FreakSeek** (Fast Rust Embodied AI Kernel) is a fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that runs GGUF models entirely on your own computer. An embedded Rust inference engine loads the model, renders its chat template, and streams tokens to the agent; the desktop app and the Web UI let you pick, load, and chat with local models without an account, an API key, or a network connection.
+**FreakSeek** (Fast Rust Embodied AI Kernel) is a fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that runs GGUF models entirely on your own computer. An embedded Rust inference engine loads the model, renders its chat template, and streams tokens to the agent; FreakSeek has two surfaces: the **desktop app**, where you pick, load, and chat with local models, and the **CLI**, which runs tasks on them from a terminal. Neither needs an account, an API key, or a network connection, and FreakSeek ships no browser UI.
 
 FreakSeek keeps the upstream **everything-is-a-plugin** architecture powered by [Cordis](https://github.com/cordiverse/cordis), so tools, skills, subagents, and the rest of the harness work unchanged on local models.
 
@@ -22,9 +22,9 @@ Follow-up turns reuse the KV cache, so only the new tokens are evaluated:
 
 ## Offline by design
 
-- **No remote services.** The `offline` profile ([`dsh-offline`](packages/bundle/offline/README.md)) removes every hosted model provider, account sign-in, telemetry, product analytics, and npm-backed plugin installation.
+- **No remote services.** [`dsh-offline`](packages/bundle/offline/README.md), under both the CLI and the desktop app, removes every hosted model provider, account sign-in, telemetry, product analytics, and npm-backed plugin installation.
 - **No sockets in the engine.** [`dsh-gguf-engine`](native/gguf-engine/README.md) has no networking dependency; its only I/O is the model file and its stdin/stdout pipes.
-- **Loopback-only desktop.** The desktop app confines its Electron session to loopback and local resources, which also blocks update checks and spell-check dictionary downloads.
+- **Loopback-only desktop, no browser.** The desktop app confines its Electron session to loopback and local resources, which also blocks update checks and spell-check dictionary downloads, and [`dsh-offline-app`](packages/bundle/offline-app/README.md) removes its web-browser tabs. The `dsh` launcher refuses profiles that serve the browser Web UI.
 - **One opt-in exception.** The model may search the web through DuckDuckGo and fetch pages it names. Disable the web tool to remove that traffic too (see [`dsh-offline`](packages/bundle/offline/README.md#use-this-bundle)).
 
 ## Quick start
@@ -33,7 +33,9 @@ Follow-up turns reuse the KV cache, so only the new tokens are evaluated:
 
 Install the desktop build, put `.gguf` files in `~/.dsh/models`, open **Settings → Local models**, and select **Load**. The loaded model becomes the default for new conversations, and the composer's model picker lists every supported file.
 
-### From source
+Prebuilt Windows x64 installers with the CUDA engine are on the [releases page](https://github.com/premiumfrog/freakseek-harness/releases).
+
+### CLI
 
 Install Node.js 24.9 or later, pnpm, and stable Rust, then run:
 
@@ -43,10 +45,16 @@ cd freakseek-harness
 pnpm install
 pnpm run build
 pnpm run build:gguf-engine   # CPU engine; see GPU acceleration below
-pnpm dsh offline
+pnpm dsh cli "explain what this repository does"
 ```
 
-`pnpm dsh offline` starts the Web UI at `http://127.0.0.1:3080` on local models only. `DSH_LOCAL_MODEL_DIRS` replaces the scanned model folders, and `DSH_GGUF_ENGINE` names a specific engine executable.
+`dsh cli` answers one task on a local model in the current directory, prints the result, and exits; `--session-id <id>` continues a Session and `--json` prints machine-readable output. It uses the only model in the model folder; with several, name one in `DSH_LOCAL_MODEL` (the file's path under the folder without `.gguf`, such as `qwen/qwen2.5-7b-instruct-q4_k_m`). `DSH_LOCAL_MODEL_DIRS` replaces the scanned model folders, and `DSH_GGUF_ENGINE` names a specific engine executable.
+
+### Desktop app from source
+
+```sh
+pnpm run dev:desktop
+```
 
 ## GPU acceleration (CUDA)
 
@@ -65,7 +73,7 @@ The `local` provider ([`dsh-llm-local-gguf`](packages/llm/llm-local-gguf/README.
 | `device` | `auto` | `auto` uses the first CUDA GPU when the engine was built with CUDA, else the CPU; `cpu`, `cuda`, or `cuda:N` force a device |
 | `gpuLayers` | all | Transformer layers kept on the GPU; lower it when the model and its KV cache exceed VRAM, and the remaining layers run on the CPU |
 
-In the `offline` profile and the desktop app, set them with `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS`, for example `set DSH_GGUF_GPU_LAYERS=36` before `pnpm dsh offline`. Inactive conversations park their KV caches in system RAM, so only the active conversation occupies VRAM. On a 12 GB card such as the RTX 3060, 7B and 8B models at Q4_K_M or Q5_K_M fit entirely; a 14B Q4_K_M model needs `gpuLayers` around 36 of its 48 layers, with the rest on the CPU.
+In the CLI and the desktop app, set them with `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS`, for example `set DSH_GGUF_GPU_LAYERS=36` before starting either. Inactive conversations park their KV caches in system RAM, so only the active conversation occupies VRAM. On a 12 GB card such as the RTX 3060, 7B and 8B models at Q4_K_M or Q5_K_M fit entirely; a 14B Q4_K_M model needs `gpuLayers` around 36 of its 48 layers, with the rest on the CPU.
 
 The Local models settings page shows the device and the number of offloaded layers once a model is loaded.
 

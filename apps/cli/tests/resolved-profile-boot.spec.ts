@@ -32,6 +32,26 @@ afterEach(() => {
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 
+describe('runProfile and the Web app', () => {
+  it('refuses a profile that serves the browser Web UI unless the caller embeds it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-profile-web-refused-'))
+    homes.push(home)
+    mkdirSync(join(home, 'runtime'))
+    writeFileSync(join(home, 'runtime/package.json'), '{"name":"test-runtime","version":"1.0.0"}')
+    writeFileSync(join(home, 'package.json'), '{"name":"test-bundle","version":"1.0.0"}')
+    vi.stubEnv('DSH_HOME', home)
+    vi.spyOn(process, 'on').mockReturnValue(process)
+    vi.mocked(installProxyFromEnvironment).mockResolvedValue(vi.fn().mockResolvedValue(undefined))
+    const profile: Profile = { skippedBundles: [], name: 'desktop', dir: home, patchPath: join(home, 'cordis.patch.yml'), patches: [],
+      layers: [{ packageName: '@deepseek-ai/dsh-web-app', packageDir: home, patchPaths: [], patches: [] }] }
+    await expect(runProfile({
+      environment: createLaunchEnvironmentSnapshot([]), profile: 'web', patchFiles: [], args: [],
+      resolvedProfile: { profile, installAnchor: join(home, 'runtime/package.json') },
+    })).rejects.toThrow('serves the browser Web UI')
+    expect(boot).not.toHaveBeenCalled()
+  })
+})
+
 describe('runProfile with an application-owned profile', () => {
   it.each(
     ['composition', 'boot', 'watch', 'cleanup', 'tree-cleanup', 'both-cleanups'] as const,

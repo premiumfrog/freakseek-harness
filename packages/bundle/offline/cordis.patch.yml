@@ -1,8 +1,9 @@
-# The dsh-offline bundle patch: layered after dsh-base and dsh-web-app, it
-# removes every row that contacts a remote service on its own (DeepSeek model
-# routes and request metadata, third-party model catalogs, account sign-in,
-# telemetry, product analytics, session-log upload, and npm-backed plugin
-# installation) and serves models from local GGUF files instead.
+# The dsh-offline bundle patch: layered after dsh-base (and dsh-headless for the
+# CLI), it removes every dsh-base row that contacts a remote service on its own
+# (DeepSeek model routes and request metadata, third-party model catalogs,
+# account sign-in, telemetry, session-log upload, and npm-backed plugin
+# installation) and serves models from local GGUF files instead. The desktop
+# adds dsh-offline-app for the rows dsh-web-app contributes.
 #
 # The only remaining outbound traffic is model-initiated: the web search tool
 # sends the query text to DuckDuckGo, and the web fetch tool retrieves the URL
@@ -23,27 +24,17 @@
   disabled: true
 - id: deepseek-account
   disabled: true
-- id: account-controller
-  disabled: true
-- id: ui-settings-account
-  disabled: true
 
 # Telemetry and analytics.
 - id: otel
   disabled: true
 - id: session-telemetry-otel
   disabled: true
-- id: desktop-product-telemetry
-  disabled: true
-- id: product-analytics
-  disabled: true
 
 # Plugin installation resolves packages from the npm registry.
 - id: plugin-manager
   disabled: true
 - id: tool-plugin-manager
-  disabled: true
-- id: ui-plugin-manager
   disabled: true
 
 # Web search through the DeepSeek API is replaced by a direct DuckDuckGo query.
@@ -74,6 +65,3 @@
 
     - id: web-search-duckduckgo
       name: '@deepseek-ai/dsh-web-search-duckduckgo'
-
-    - id: ui-settings-local-models
-      name: '@deepseek-ai/dsh-client-ui-settings-local-models'

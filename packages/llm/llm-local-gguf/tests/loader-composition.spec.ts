@@ -147,6 +147,16 @@ it('reports an unknown model as a typed failure', async () => {
   expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'LOCAL_UNKNOWN_MODEL' } } })
 })
 
+it('answers the default model id with the only supported model and names the choices when there are several', async () => {
+  const { ctx, models } = await boot()
+  const only = await collect(ctx.llm.stream({ ...request('hello'), model: 'default' }))
+  expect(only.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  await writeBigramModel(join(models, 'second.gguf'), 'Yo!')
+  const several = await collect(ctx.llm.stream({ ...request('hello'), model: 'default' }))
+  expect(several.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'LOCAL_UNKNOWN_MODEL' } } })
+  expect(JSON.stringify(several.at(-1))).toContain('family/bigram-hi, second')
+})
+
 it('stops the engine process when the plugin is disposed', async () => {
   const { ctx } = await boot()
   const service = ctx.localModels

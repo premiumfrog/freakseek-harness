@@ -202,10 +202,12 @@ export function verifyProductUse(
       return loadOverlayPatches('verify-product-use', path)
     })]
   })
+  const desktop = literalDeclaration(profileFile, 'DESKTOP_PROFILE_TEMPLATE')
+  if (!isRecord(desktop)) throw new Error(`${PROFILE_SOURCE}: DESKTOP_PROFILE_TEMPLATE must be a literal object`)
   const profiles = [...Object.entries(templates).map(([name, value]) => {
     if (!isRecord(value)) throw new Error(`${PROFILE_SOURCE}: invalid ${name} profile`)
     return stringList(value.bundles, `${PROFILE_SOURCE} ${name}`)
-  }), fallback]
+  }), stringList(desktop.bundles, `${PROFILE_SOURCE} desktop`), fallback]
   for (const names of profiles) {
     if (names.length === 0) failures.push(`${PROFILE_SOURCE}: shipped profile has no bundles`)
     scanEntries(composeEntries(layers(names, defaults)), profilePath, defaults)

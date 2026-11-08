@@ -1,7 +1,7 @@
 /** Shipped profile templates, and the offline catalog that does not depend on installed provider packages or registry requests. */
 
 import { describe, expect, it } from 'vitest'
-import { OFFICIAL_ON_DEMAND_CATALOG, ON_DEMAND_BUNDLES, PROFILE_TEMPLATES } from '../src/index.ts'
+import { OFFICIAL_ON_DEMAND_CATALOG, ON_DEMAND_BUNDLES, DESKTOP_PROFILE_TEMPLATE, PROFILE_TEMPLATES } from '../src/index.ts'
 
 describe('Official on-demand catalog', () => {
   it('offers exactly the two native subagent integrations with offline localized metadata', () => {
@@ -25,8 +25,16 @@ describe('Shipped profile templates', () => {
       acp: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'] },
       web: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] },
       headless: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'] },
+      cli: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless', '@deepseek-ai/dsh-offline'] },
       sdk: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'] },
       'sdk-minimal': { bundles: ['@deepseek-ai/dsh-sdk-minimal'] },
     })
+  })
+
+  it('compose the desktop app outside the launcher templates', () => {
+    expect(DESKTOP_PROFILE_TEMPLATE.bundles).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-offline', '@deepseek-ai/dsh-offline-app',
+    ])
+    expect(Object.values(PROFILE_TEMPLATES).some(t => t.bundles.includes('@deepseek-ai/dsh-offline-app'))).toBe(false)
   })
 })

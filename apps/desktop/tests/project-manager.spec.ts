@@ -122,7 +122,7 @@ describe('desktop external plugin profile', () => {
     expect(manifest.dependencies.plugin).toBe('1.0.0')
     expect(manifest.dsh.profile.bundles).not.toContain('plugin')
     expect(manifest.dsh.profile.bundles).toContain('@deepseek-ai/dsh-web-app')
-    expect(manifest.dsh.profile.bundles.at(-1)).toBe('@deepseek-ai/dsh-offline')
+    expect(manifest.dsh.profile.bundles.at(-1)).toBe('@deepseek-ai/dsh-offline-app')
     await manager.applyRelease()
     expect(readFileSync(patch, 'utf8')).toContain('[]')
   })

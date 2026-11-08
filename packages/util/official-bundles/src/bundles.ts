@@ -11,14 +11,16 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
   acp: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
   },
+  // The upstream Web app composition; the launcher refuses it, and the desktop composes its own list.
   web: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
   },
-  offline: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-offline'],
-  },
   headless: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+  },
+  // FreakSeek's terminal surface: one-shot tasks on local GGUF models with no remote service rows.
+  cli: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless', '@deepseek-ai/dsh-offline'],
   },
   sdk: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
@@ -26,6 +28,14 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
   'sdk-minimal': {
     bundles: ['@deepseek-ai/dsh-sdk-minimal'],
   },
+}
+
+/**
+ * The Desktop application's composition: the Web app embedded in its window, on local GGUF models with no remote
+ * service rows. It is not a launcher template; only the desktop host boots it.
+ */
+export const DESKTOP_PROFILE_TEMPLATE: ProfileTemplate = {
+  bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-offline', '@deepseek-ai/dsh-offline-app'],
 }
 
 /**

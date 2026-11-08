@@ -23,13 +23,13 @@ import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
 import { initProfile, removeLinkProjections, sanitizeProfile } from '@deepseek-ai/dsh-app-boot'
-import { PROFILE_TEMPLATES, type ProfileTemplate } from '@deepseek-ai/dsh-official-bundles'
+import { DESKTOP_PROFILE_TEMPLATE, type ProfileTemplate } from '@deepseek-ai/dsh-official-bundles'
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const CORE_BUILD_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
 // Desktop is offline-first: local GGUF models and no remote service rows (dsh-offline).
-const DESKTOP_PROFILE = PROFILE_TEMPLATES.offline as ProfileTemplate
+const DESKTOP_PROFILE: ProfileTemplate = DESKTOP_PROFILE_TEMPLATE
 /** Whether the Desktop profile is the offline local-model composition, which has no account or provider sign-in. */
 export const DESKTOP_OFFLINE = DESKTOP_PROFILE.bundles.includes('@deepseek-ai/dsh-offline')
 const WORKSPACE_SETTINGS = 'nodeLinker: hoisted\nautoInstallPeers: false\n'

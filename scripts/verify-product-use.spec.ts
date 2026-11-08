@@ -30,7 +30,7 @@ function pkg(root: string, directory: string, name: string, fields: Record<strin
 function profiles(root: string, optional: string[] = [], onDemand: string[] = []): void {
   write(root, profile, `export const PROFILE_TEMPLATES = ${JSON.stringify(Object.fromEntries(
     ['web', 'acp', 'headless', 'sdk', 'sdk-minimal'].map(name => [name, { bundles: [base] }]),
-  ))}\nexport const DEFAULT_PROFILE_BUNDLES = ['${base}']\nexport const OPTIONAL_BUNDLES = ${JSON.stringify(optional)}\n`
+  ))}\nexport const DESKTOP_PROFILE_TEMPLATE = { bundles: ['${base}'] }\nexport const DEFAULT_PROFILE_BUNDLES = ['${base}']\nexport const OPTIONAL_BUNDLES = ${JSON.stringify(optional)}\n`
     + `export const ON_DEMAND_BUNDLES = ${JSON.stringify(onDemand)}\n`)
 }
 

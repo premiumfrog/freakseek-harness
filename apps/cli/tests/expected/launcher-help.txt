@@ -22,11 +22,9 @@ Options:
                                  or --patch overlays and exit
 
 Examples:
-  dsh web                                   boot the web profile (same as: dsh --profile web)
-  dsh rescue --from-default-profile web
-                                            recreate rescue from the shipped web template, then boot it
-  dsh headless "run the tests"              answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
-  dsh tui --resume <session>                arguments after the launcher flags reach the app
-  dsh web --help                            the web app's own flags and help
-  dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh cli "run the tests"                   answer one task on a local model, print the result, and exit
+  dsh cli --session-id <id> "now fix it"    continue that Session with another task
+  dsh cli --json "list the TODOs"           print the result as JSON
+  dsh cli --help                            the CLI app's own flags and help
+  dsh --profile cli --dump-config           print the composed CLI profile
+  dsh plugin --profile cli add <package>    install a plugin into the cli profile

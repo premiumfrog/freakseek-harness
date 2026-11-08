@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-`@deepseek-ai/dsh-offline` is the last layer of the `offline` profile (`dsh-base`, `dsh-web-app`, `dsh-offline`) and of the desktop app. It removes every row that contacts a remote service on its own, mounts [`dsh-llm-local-gguf`](../../llm/llm-local-gguf/README.md) as the only model route, and replaces DeepSeek-API web search with a direct [DuckDuckGo](../../web/web-search-duckduckgo/README.md) query. The only outbound traffic left is model-initiated: the web search tool sends its query text, and the web fetch tool retrieves the URL the model names.
+`@deepseek-ai/dsh-offline` is the offline layer of FreakSeek's two surfaces: the `cli` profile (`dsh-base`, `dsh-headless`, `dsh-offline`) and the desktop app (`dsh-base`, `dsh-web-app`, `dsh-offline`, [`dsh-offline-app`](../offline-app/README.md)). It removes every `dsh-base` row that contacts a remote service on its own, mounts [`dsh-llm-local-gguf`](../../llm/llm-local-gguf/README.md) as the only model route, and replaces DeepSeek-API web search with a direct [DuckDuckGo](../../web/web-search-duckduckgo/README.md) query. The only outbound traffic left is model-initiated: the web search tool sends its query text, and the web fetch tool retrieves the URL the model names.
 
 ## Table of Contents
 
@@ -23,11 +23,12 @@ kind: "package-bundle"
 ## Use this bundle
 
 ```sh
-dsh offline                     # the Web app on local models
-dsh --profile offline --dump-config
+dsh cli "summarize this repository"     # one task on a local model, printed to the terminal
+dsh cli --resume <session> "and now…"   # continue that Session
+dsh --profile cli --dump-config
 ```
 
-Put `.gguf` files in `$DSH_HOME/models`, open **Settings → Local models**, and select **Load**. Loading a model makes it the default for new conversations; the composer's model picker lists every supported file. `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces the scanned directories, `DSH_GGUF_ENGINE` names the engine executable, `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS` set the provider's `device` and `gpuLayers`, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
+Put `.gguf` files in `$DSH_HOME/models`. In the desktop app, open **Settings → Local models** and select **Load**; loading a model makes it the default for new conversations. The CLI uses the only supported model in the folders; with several, `DSH_LOCAL_MODEL` names one by id, such as `qwen/qwen2.5-7b-instruct-q4_k_m`. `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces the scanned directories, `DSH_GGUF_ENGINE` names the engine executable, `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS` set the provider's `device` and `gpuLayers`, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
 
 To remove the remaining model-initiated traffic as well, disable the web tool in the profile patch:
 
@@ -42,12 +43,12 @@ To remove the remaining model-initiated traffic as well, disable the web tool in
 | Rows | Remote service |
 |---|---|
 | `llm-deepseek`, `llm-deepseek-account`, `llm-pi-ai`, `deepseek-llm-api-extensions`, `plugin-package-inventory-deepseek`, `session-log-deepseek` | DeepSeek and third-party model APIs, request metadata, session-log upload |
-| `deepseek-account`, `account-controller`, `ui-settings-account` | DeepSeek account sign-in |
-| `otel`, `session-telemetry-otel`, `desktop-product-telemetry`, `product-analytics` | Telemetry and product analytics |
-| `plugin-manager`, `tool-plugin-manager`, `ui-plugin-manager` | npm-backed plugin installation |
+| `deepseek-account` | DeepSeek account sign-in |
+| `otel`, `session-telemetry-otel` | Telemetry |
+| `plugin-manager`, `tool-plugin-manager` | npm-backed plugin installation |
 | `web-search-deepseek`, `web-deepseek-api` | Web search through the DeepSeek API |
 
-The desktop app also confines its own Electron session to loopback and local resources, which covers update checks and spell-check dictionary downloads.
+[`dsh-offline-app`](../offline-app/README.md) removes the Web app's account, telemetry, and plugin-installation rows for the desktop app, which also confines its own Electron session to loopback and local resources, covering update checks and spell-check dictionary downloads.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -63,7 +64,6 @@ The bundle adds nothing to the request prefix; the local route's prefix reuse ap
 <a id="known-limitations-and-deferred-work"></a>
 
 - MCP servers a user configures keep their own network access.
-- Sidebar browser tabs browse the web on the user's request; they use separate partitions that the desktop offline policy does not confine.
 
 <a id="dev-note"></a>
 ### Dev Note

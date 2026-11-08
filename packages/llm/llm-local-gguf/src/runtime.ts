@@ -49,6 +49,9 @@ function displayName(facts: EngineModelFacts, file: string, quantization: string
   return quantization === undefined || name.toUpperCase().includes(quantization) ? name : `${name} (${quantization})`
 }
 
+/** Model id that selects the only supported model in the catalog, for launches that name none. */
+export const DEFAULT_MODEL_ID = 'default'
+
 /** Owner of local model state; one per plugin instance. */
 export class LocalModelRuntime {
   private process: EngineProcess | undefined
@@ -130,7 +133,7 @@ export class LocalModelRuntime {
    */
   contextWindow(modelId: string): number | undefined {
     if (this.loaded?.modelId === modelId) return this.loaded.contextLength
-    const entry = this.entries.find(e => e.id === modelId)
+    const entry = this.find(modelId)
     if (entry === undefined) return undefined
     return Math.min(this.settings.contextLength(), entry.trainedContextLength ?? this.settings.contextLength())
   }
@@ -212,11 +215,24 @@ export class LocalModelRuntime {
     return this.serial(() => this.loadNow(modelId))
   }
 
+  /** Catalog entry for an id; {@link DEFAULT_MODEL_ID} names the only supported model. */
+  private find(modelId: string): LocalModelEntry | undefined {
+    if (modelId !== DEFAULT_MODEL_ID) return this.entries.find(e => e.id === modelId)
+    const supported = this.entries.filter(e => e.supported)
+    return supported.length === 1 ? supported[0] : undefined
+  }
+
   private async loadNow(modelId: string): Promise<number> {
-    let entry = this.entries.find(e => e.id === modelId)
+    let entry = this.find(modelId)
     if (entry === undefined) {
       await this.refresh()
-      entry = this.entries.find(e => e.id === modelId)
+      entry = this.find(modelId)
+    }
+    if (entry === undefined && modelId === DEFAULT_MODEL_ID) {
+      const ids = this.entries.filter(e => e.supported).map(e => e.id)
+      throw new EngineError('UNKNOWN_MODEL', ids.length === 0
+        ? `no supported local model in ${this.settings.directories().join(', ')}`
+        : `several local models are available; choose one (for example with DSH_LOCAL_MODEL): ${ids.join(', ')}`)
     }
     if (entry === undefined) throw new EngineError('UNKNOWN_MODEL', `no local model "${modelId}" in ${this.settings.directories().join(', ')}`)
     if (!entry.supported) throw new EngineError('UNSUPPORTED_MODEL', `${entry.name}: ${entry.unsupportedReason ?? 'unsupported model'}`)

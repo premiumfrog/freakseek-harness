@@ -417,6 +417,9 @@ importers:
       '@deepseek-ai/dsh-offline':
         specifier: workspace:*
         version: link:../../packages/bundle/offline
+      '@deepseek-ai/dsh-offline-app':
+        specifier: workspace:*
+        version: link:../../packages/bundle/offline-app
       '@deepseek-ai/dsh-persona':
         specifier: workspace:*
         version: link:../../packages/preset/persona
@@ -2775,15 +2778,22 @@ importers:
 
   packages/bundle/offline:
     dependencies:
-      '@deepseek-ai/dsh-client-ui-settings-local-models':
-        specifier: workspace:*
-        version: link:../../client/ui-settings-local-models
       '@deepseek-ai/dsh-llm-local-gguf':
         specifier: workspace:*
         version: link:../../llm/llm-local-gguf
       '@deepseek-ai/dsh-web-search-duckduckgo':
         specifier: workspace:*
         version: link:../../web/web-search-duckduckgo
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+
+  packages/bundle/offline-app:
+    dependencies:
+      '@deepseek-ai/dsh-client-ui-settings-local-models':
+        specifier: workspace:*
+        version: link:../../client/ui-settings-local-models
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~

@@ -12,8 +12,7 @@ Run `pnpm run gen-cli-help` to regenerate; run `pnpm run verify-cli-help` to che
 - [`dsh`](#dsh)
 - [`dsh plugin`](#dsh-plugin)
 - [`dsh acp`](#dsh-acp)
-- [`dsh headless`](#dsh-headless)
-- [`dsh offline`](#dsh-offline)
+- [`dsh cli`](#dsh-cli)
 - [`dsh sdk`](#dsh-sdk)
 - [`dsh sdk-minimal`](#dsh-sdk-minimal)
 
@@ -47,14 +46,12 @@ Options:
                                  or --patch overlays and exit
 
 Examples:
-  dsh web                                   boot the web profile (same as: dsh --profile web)
-  dsh rescue --from-default-profile web
-                                            recreate rescue from the shipped web template, then boot it
-  dsh headless "run the tests"              answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
-  dsh tui --resume <session>                arguments after the launcher flags reach the app
-  dsh web --help                            the web app's own flags and help
-  dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh cli "run the tests"                   answer one task on a local model, print the result, and exit
+  dsh cli --session-id <id> "now fix it"    continue that Session with another task
+  dsh cli --json "list the TODOs"           print the result as JSON
+  dsh cli --help                            the CLI app's own flags and help
+  dsh --profile cli --dump-config           print the composed CLI profile
+  dsh plugin --profile cli add <package>    install a plugin into the cli profile
 
 ```
 
@@ -97,10 +94,10 @@ Example:
 
 ```
 
-<a id="dsh-headless"></a>
-## `dsh headless`
+<a id="dsh-cli"></a>
+## `dsh cli`
 
-Invocations: `dsh headless --help`, `dsh --profile headless --help`
+Invocations: `dsh cli --help`, `dsh --profile cli --help`, `dsh headless --help`, `dsh --profile headless --help`
 
 ```text
 Usage: dsh --profile headless [options] [task...]
@@ -131,46 +128,6 @@ Examples:
   dsh --profile headless --session-id session-… "continue"   resume an existing Session
   dsh --profile headless --permission-mode workspace-write --add-dir /repo/.git "commit the fix"
                                                         grant shared Git metadata for this task
-
-```
-
-<a id="dsh-offline"></a>
-## `dsh offline`
-
-Invocations: `dsh offline --help`, `dsh --profile offline --help`, `dsh web --help`, `dsh --profile web --help`
-
-```text
-Usage: dsh --profile web [options]
-
-Serve the DeepSeek Harness browser UI.
-
-Options:
-  --host <host>                  bind address: one concrete IPv4 or IPv6 literal
-                                 of a local interface; wildcard addresses are
-                                 rejected
-  --no-open                      do not open the Web UI in the default browser
-  --port <port>                  listen port; pass 0 to let the OS pick a free
-                                 one
-  --public-url <url>             advertise this HTTP(S) root in the printed,
-                                 opened, runtime-context, and DSH_WEB_URL forms;
-                                 grants no trust
-  --trusted-host <authority...>  extra authority the /api browser-trust fence
-                                 accepts (host or host:port; repeatable)
-  --tls-cert <file>              PEM server certificate chain; requires
-                                 --tls-key
-  --tls-key <file>               unencrypted PEM private key; requires
-                                 --tls-cert
-  -h, --help                     show this help
-
-Examples:
-  dsh --profile web                          serve on the composed host and port
-  dsh --profile web --no-open                serve without opening a browser
-  dsh --profile web --port 8080              serve on another port
-  dsh --profile web --host 10.0.0.7          bind one local interface address
-  dsh --profile web --public-url https://app.example/ui/ --trusted-host app.example
-                                             advertise a prefix-stripping HTTPS proxy entry and admit its authority
-  dsh --profile web --tls-cert ./server-chain.pem --tls-key ./server-key.pem
-                                             serve HTTPS with an existing certificate and key
 
 ```
 

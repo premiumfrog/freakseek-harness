@@ -189,7 +189,9 @@ export async function collectCliHelp(
 async function collectHelp(): Promise<HelpPage[]> {
   const concurrency = cliHelpConcurrency(process.env.DSH_CLI_HELP_CONCURRENCY, defaultParallelism())
   const directory = mkdtempSync(join(tmpdir(), 'dsh-cli-help-'))
+  // The launcher refuses profiles that serve the browser Web UI, so they have no help page.
   const profiles = Object.keys(PROFILE_TEMPLATES)
+    .filter(name => !PROFILE_TEMPLATES[name]?.bundles.includes('@deepseek-ai/dsh-web-app'))
   // Aggregate callers allocate this leaf's children separately from the other running gates.
   const reader = prefetchHelp(async (args, signal) => {
     // Each invocation boots against its own empty Harness and agents homes.
