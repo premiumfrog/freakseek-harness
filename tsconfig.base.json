@@ -335,6 +335,7 @@
       "@deepseek-ai/dsh-client-ui-settings-plugins": ["./packages/client/ui-settings-plugins/src"],
       "@deepseek-ai/dsh-client-ui-settings-shell": ["./packages/client/ui-settings-shell/src"],
       "@deepseek-ai/dsh-client-ui-settings-local-models": ["./packages/client/ui-settings-local-models/src"],
+      "@deepseek-ai/dsh-client-ui-code-mode": ["./packages/client/ui-code-mode/src"],
       "@deepseek-ai/dsh-cua/client": ["./packages/experimental/cua/src/client/index.ts"],
       "@deepseek-ai/dsh-cua/types": ["./packages/experimental/cua/src/remote-types.ts"],
       "@deepseek-ai/dsh-client-ui-settings-agent-loop": ["./packages/client/ui-settings-agent-loop/src"],

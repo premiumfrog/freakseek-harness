@@ -1,0 +1,16 @@
+/* Matches the header's compact utility buttons. */
+.button {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Pressed uses the ghost button's active fill so the mode reads at a glance. */
+.pressed {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-button-ghost-active-fill);
+}
