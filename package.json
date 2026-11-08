@@ -1,6 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-root",
   "version": "0.2.2-rc.1",
+  "description": "FreakSeek (Fast Rust Embodied AI Kernel): an offline agent harness running local GGUF models",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -62,6 +63,7 @@
     "test:coverage": "pnpm run build:native-system && pnpm run build:gguf-engine && vitest run --coverage",
     "build:native-system": "tsx native/system/scripts/build.ts --host-addon-only",
     "build:gguf-engine": "cargo build --release --locked --manifest-path native/gguf-engine/Cargo.toml",
+    "build:gguf-engine:cuda": "cargo build --release --locked --features cuda --manifest-path native/gguf-engine/Cargo.toml",
     "test:coverage:partitioned": "tsx scripts/run-coverage-partitions.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:bench": "npm run build:bench && npm run build:web && npm run test:bench:built",

@@ -12,7 +12,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { basename, join, relative, sep } from 'node:path'
 import { EngineError, EngineProcess } from './engine-process.ts'
 import type { GenerateHandlers } from './engine-process.ts'
-import type { EngineGenerateRequest, EngineModelFacts, EngineOutcome, LocalModelEntry, LocalModelsSnapshot, LocalModelsState } from './types.ts'
+import type { EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, LocalModelEntry, LocalModelsSnapshot, LocalModelsState } from './types.ts'
 
 /** `general.file_type` codes (llama.cpp `llama_ftype`) to display names. */
 const FILE_TYPES: Readonly<Record<number, string>> = {
@@ -32,6 +32,8 @@ export interface RuntimeSettings {
   contextLength(): number
   /** KV cache slots kept per loaded model. */
   cacheSlots(): number
+  /** Compute device and GPU layer count requested at load. */
+  placement(): EnginePlacement
   shutdownGraceMillis(): number
 }
 
@@ -227,9 +229,9 @@ export class LocalModelRuntime {
     this.loaded = undefined
     this.setState({ kind: 'loading', modelId })
     try {
-      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots())
+      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), this.settings.placement())
       this.loaded = { modelId, path: entry.path, contextLength: result.contextLength }
-      this.setState({ kind: 'loaded', modelId, contextLength: result.contextLength })
+      this.setState({ kind: 'loaded', modelId, contextLength: result.contextLength, device: result.device, gpuLayers: result.gpuLayers })
       return result.contextLength
     } catch (error) {
       this.setState({ kind: 'failed', modelId, reason: (error as Error).message })

@@ -62,7 +62,7 @@ export function LocalModelsSection({ t, useModels, refresh, load, unload }: Loca
             {model.tools && <Tag tone="neutral">{t('tools')}</Tag>}
             {model.reasoning && <Tag tone="neutral">{t('reasoning')}</Tag>}
           </div>
-          {loaded && state?.kind === 'loaded' && <div className={css.modelStatus}>{t('inUse', { context: state.contextLength })}</div>}
+          {loaded && state?.kind === 'loaded' && <div className={css.modelStatus}>{state.device === 'cpu' ? t('inUse', { context: state.contextLength }) : t('inUseGpu', { context: state.contextLength, device: state.device, layers: state.gpuLayers })}</div>}
           {!model.supported && <div className={css.modelProblem}>{t('unsupported', { reason: model.unsupportedReason ?? '' })}</div>}
           <div className={css.modelPath} title={model.path}>{t('fileName', { id: model.id })}</div>
         </div>

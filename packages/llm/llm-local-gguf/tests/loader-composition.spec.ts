@@ -127,7 +127,7 @@ it('lists supported GGUF files and streams a reply with prompt-cache usage', asy
   expect(again).toMatchObject({ usage: { inputTokens: 1 } })
 
   const snapshot = await ctx.localModels.snapshot()
-  expect(snapshot.state).toEqual({ kind: 'loaded', modelId: 'family/bigram-hi', contextLength: 512 })
+  expect(snapshot.state).toEqual({ kind: 'loaded', modelId: 'family/bigram-hi', contextLength: 512, device: 'cpu', gpuLayers: 0 })
   expect(snapshot.models.find(m => m.id === 'not-a-model')).toMatchObject({ supported: false })
   expect((await ctx.localModels.unload()).snapshot.state).toEqual({ kind: 'idle' })
 })

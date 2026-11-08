@@ -22,11 +22,11 @@ A request line that is not valid JSON is answered with `id: null` and `BAD_REQUE
 
 | `op` | Fields | `value` on success | Ordering |
 |---|---|---|---|
-| `hello` | — | `{ protocol, version }` | Answered immediately |
+| `hello` | — | `{ protocol, version, cuda }`; `cuda` is whether the build can use CUDA devices | Answered immediately |
 | `inspect` | `path` | Header facts: `name`, `architecture`, `supported`, `unsupportedReason`, `contextLength`, `parameterCount`, `fileType`, `fileBytes`, `hasChatTemplate`, `templateTools`, `templateReasoning` | Answered immediately, even during a generation |
-| `load` | `path`, optional `contextLength`, optional `slots` (default 4) | `{ facts, contextLength, vocab }`; the window is clamped to 256 … the trained length | Queued |
+| `load` | `path`, optional `contextLength`, optional `slots` (default 4), optional `device` (`auto` default, `cpu`, `cuda`, `cuda:<n>`), optional `gpuLayers` (trailing layers on the GPU; default all) | `{ facts, contextLength, vocab, device, gpuLayers }`; the window is clamped to 256 … the trained length; `device` is `cpu` or `cuda:<n>` and `gpuLayers` counts offloaded layers | Queued |
 | `unload` | — | `null` | Queued |
-| `status` | — | `{ loaded, path?, contextLength? }` | Queued |
+| `status` | — | `{ loaded, path?, contextLength?, device?, gpuLayers? }` | Queued |
 | `generate` | `messages`, optional `tools`, `maxTokens`, `stop`, `sampling`, `thinking`, `slot` | `{ finishReason, promptTokens, cachedTokens, completionTokens }`; `finishReason` is `stop`, `length`, or `cancelled` | Queued |
 | `cancel` | `target` | `null` | Answered immediately; the target generation stops at its next token |
 | `shutdown` | — | `null` | Answered immediately; queued work is cancelled and the process exits |
@@ -43,4 +43,6 @@ Closing stdin has the same effect as `shutdown`.
 | `NO_MODEL` | `generate` before a successful `load` |
 | `UNSUPPORTED_MODEL` | The architecture is not implemented |
 | `CONTEXT_WINDOW_EXCEEDED` | The rendered prompt does not fit the loaded window |
+| `BAD_DEVICE` | `device` is not `auto`, `cpu`, `cuda`, or `cuda:<n>` |
+| `DEVICE_UNAVAILABLE` | `cuda` was requested from a build without CUDA, or the CUDA device could not be opened; `auto` falls back to the CPU instead |
 | `ENGINE_ERROR` | Any other failure, such as an unreadable file or a template error |

@@ -27,7 +27,7 @@ dsh offline                     # the Web app on local models
 dsh --profile offline --dump-config
 ```
 
-Put `.gguf` files in `$DSH_HOME/models`, open **Settings → Local models**, and select **Load**. Loading a model makes it the default for new conversations; the composer's model picker lists every supported file. `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces the scanned directories, `DSH_GGUF_ENGINE` names the engine executable, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
+Put `.gguf` files in `$DSH_HOME/models`, open **Settings → Local models**, and select **Load**. Loading a model makes it the default for new conversations; the composer's model picker lists every supported file. `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces the scanned directories, `DSH_GGUF_ENGINE` names the engine executable, `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS` set the provider's `device` and `gpuLayers`, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
 
 To remove the remaining model-initiated traffic as well, disable the web tool in the profile patch:
 

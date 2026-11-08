@@ -80,8 +80,8 @@ const base = process.env.DOCS_BASE ?? '/'
 
 /** Site identity shared by the VitePress configuration and the llms.txt index. */
 const siteIdentity = {
-  title: 'DeepSeek Harness',
-  description: 'A plugin-based SDK for building agent harnesses',
+  title: 'FreakSeek',
+  description: 'Fast Rust Embodied AI Kernel: an offline agent harness on local GGUF models',
 }
 
 /**

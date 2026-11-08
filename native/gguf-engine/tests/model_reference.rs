@@ -9,6 +9,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use candle_core::{Device, Tensor};
+use dsh_gguf_engine::device::Placement;
 use dsh_gguf_engine::model::Model;
 
 mod common;
@@ -57,7 +58,7 @@ fn assert_close(a: &[f32], b: &[f32], what: &str) {
 fn parity(arch: &str, tied: bool) {
     let path = write_model(arch, tied, false);
     let c = content(&path);
-    let mut engine = Model::load(&path, &c).unwrap();
+    let mut engine = Model::load(&path, &c, &Placement::cpu()).unwrap();
     let mut reference = Reference::load(arch, &path);
     let prompt = [1u32, 17, 42, 5, 88, 23, 9];
     assert_close(&engine.forward(&prompt).unwrap(), &reference.forward(&prompt, 0), &format!("{arch} prefill"));

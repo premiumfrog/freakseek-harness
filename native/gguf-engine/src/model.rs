@@ -14,6 +14,8 @@ use candle_core::quantized::gguf_file::Content;
 use candle_core::quantized::{ggml_file::qtensor_from_ggml, QMatMul, QTensor};
 use candle_core::{DType, Device, Module, Tensor};
 
+use crate::device::Placement;
+
 /// RoPE pairing convention used by the architecture's GGUF conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RopeStyle {
@@ -54,6 +56,8 @@ impl Linear {
 }
 
 struct Layer {
+    /// Device holding this layer's weights and KV cache.
+    dev: Device,
     attn_norm: Tensor,
     q: Linear,
     k: Linear,
@@ -75,6 +79,21 @@ pub struct KvCache {
 }
 
 impl KvCache {
+    /// Move the cached keys and values, keeping only the used positions.
+    /// @param dev - destination device.
+    fn moved(self, dev: &Device) -> Result<Self> {
+        let len = self.len;
+        let mv = |t: Option<Tensor>| -> Result<Option<Tensor>> {
+            match t {
+                Some(_) if len == 0 => Ok(None),
+                // Contiguous first, so only the used positions cross the bus.
+                Some(t) if !t.device().same_device(dev) => Ok(Some(t.narrow(2, 0, len)?.contiguous()?.to_device(dev)?)),
+                other => Ok(other),
+            }
+        };
+        Ok(Self { k: mv(self.k)?, v: mv(self.v)?, len })
+    }
+
     fn append(&mut self, k: &Tensor, v: &Tensor) -> Result<(Tensor, Tensor)> {
         let add = k.dim(2)?;
         let need = self.len + add;
@@ -94,7 +113,7 @@ impl KvCache {
             self.k = Some(nk);
             self.v = Some(nv);
         }
-        let (ck, cv) = (self.k.as_ref().unwrap(), self.v.as_ref().unwrap());
+        let (Some(ck), Some(cv)) = (self.k.as_ref(), self.v.as_ref()) else { bail!("KV cache allocation failed") };
         ck.slice_set(&k.contiguous()?, 2, self.len)?;
         cv.slice_set(&v.contiguous()?, 2, self.len)?;
         self.len = need;
@@ -111,7 +130,9 @@ pub struct Model {
     output: QMatMul,
     cache: Vec<KvCache>,
     inv_freq: Vec<f32>,
-    device: Device,
+    /// Device of the output head and final norm.
+    out_dev: Device,
+    placement: Placement,
 }
 
 fn md_u32(c: &Content, key: &str) -> Option<usize> {
@@ -153,6 +174,7 @@ pub fn hparams(c: &Content) -> Result<Hparams> {
 struct Loader<'a> {
     c: &'a Content,
     r: BufReader<File>,
+    /// Device the next tensors load onto.
     dev: Device,
 }
 
@@ -181,19 +203,33 @@ impl Model {
     /// Load every weight of a GGUF model into memory.
     /// @param path - GGUF file.
     /// @param content - header parsed from the same file.
-    pub fn load(path: &Path, content: &Content) -> Result<Self> {
+    /// @param placement - devices for the layers and output head.
+    pub fn load(path: &Path, content: &Content, placement: &Placement) -> Result<Self> {
         let hp = hparams(content)?;
-        let dev = Device::Cpu;
-        let mut l = Loader { c: content, r: BufReader::new(File::open(path)?), dev: dev.clone() };
+        let cpu = Device::Cpu;
+        let mut l = Loader { c: content, r: BufReader::new(File::open(path)?), dev: cpu.clone() };
+        // Embedding rows are looked up on the host, so the table stays in system memory.
         let embd = Arc::new(l.q("token_embd.weight")?);
+        // The output head follows the last layer, which is the first one offloaded.
+        let out_dev = if placement.offloads(hp.n_layer.saturating_sub(1), hp.n_layer) { placement.device.clone() } else { cpu.clone() };
+        l.dev = out_dev.clone();
         let out_norm = l.f("output_norm.weight")?;
-        let output = if l.has("output.weight") { l.mm("output.weight")? } else { QMatMul::from_arc(embd.clone())? };
+        let output = if l.has("output.weight") {
+            l.mm("output.weight")?
+        } else if out_dev.is_cpu() {
+            QMatMul::from_arc(embd.clone())?
+        } else {
+            // Tied output head on the accelerator: a device copy beside the host table.
+            l.mm("token_embd.weight")?
+        };
         let mut layers = Vec::with_capacity(hp.n_layer);
         for i in 0..hp.n_layer {
+            l.dev = if placement.offloads(i, hp.n_layer) { placement.device.clone() } else { cpu.clone() };
             let p = |s: &str| format!("blk.{i}.{s}");
             let q_norm = if l.has(&p("attn_q_norm.weight")) { Some(l.f(&p("attn_q_norm.weight"))?) } else { None };
             let k_norm = if l.has(&p("attn_k_norm.weight")) { Some(l.f(&p("attn_k_norm.weight"))?) } else { None };
             layers.push(Layer {
+                dev: l.dev.clone(),
                 attn_norm: l.f(&p("attn_norm.weight"))?,
                 q: l.linear(&p("attn_q"))?,
                 k: l.linear(&p("attn_k"))?,
@@ -218,7 +254,7 @@ impl Model {
             }
         }
         let cache = (0..hp.n_layer).map(|_| KvCache { k: None, v: None, len: 0 }).collect();
-        Ok(Self { hp, embd, layers, out_norm, output, cache, inv_freq, device: dev })
+        Ok(Self { hp, embd, layers, out_norm, output, cache, inv_freq, out_dev, placement: placement.clone() })
     }
 
     /// An empty cache set for this model, for a new sequence slot.
@@ -227,9 +263,28 @@ impl Model {
     }
 
     /// Swap the active KV cache with `other`, returning the previously active one.
+    /// Offloaded layers' caches move to the accelerator on activation and back to
+    /// system memory when parked, so parked slots do not occupy VRAM.
     /// @param other - cache set produced by [`Model::empty_cache`] or an earlier swap.
-    pub fn swap_cache(&mut self, other: Vec<KvCache>) -> Vec<KvCache> {
-        std::mem::replace(&mut self.cache, other)
+    pub fn swap_cache(&mut self, other: Vec<KvCache>) -> Result<Vec<KvCache>> {
+        let incoming = other.into_iter().zip(&self.layers).map(|(c, l)| c.moved(&l.dev)).collect::<Result<Vec<_>>>()?;
+        let previous = std::mem::replace(&mut self.cache, incoming);
+        previous.into_iter().map(|c| c.moved(&Device::Cpu)).collect()
+    }
+
+    /// Discard the active KV cache.
+    pub fn clear_cache(&mut self) {
+        self.cache = self.empty_cache();
+    }
+
+    /// Wire label of the accelerator, or `cpu`.
+    pub fn device_label(&self) -> String {
+        self.placement.label()
+    }
+
+    /// Layers running on the accelerator.
+    pub fn offloaded_layers(&self) -> usize {
+        self.layers.iter().filter(|l| !l.dev.is_cpu()).count()
     }
 
     /// Tokens currently held in the KV cache.
@@ -257,7 +312,7 @@ impl Model {
                 bail!("token id {t} outside vocabulary of {vocab}");
             }
             let bytes = &data[t * row_bytes..(t + 1) * row_bytes];
-            rows.push(qtensor_from_ggml(dtype, bytes, vec![dim], &self.device)?.dequantize(&self.device)?);
+            rows.push(qtensor_from_ggml(dtype, bytes, vec![dim], &Device::Cpu)?.dequantize(&Device::Cpu)?);
         }
         Ok(Tensor::stack(&rows, 0)?.unsqueeze(0)?)
     }
@@ -270,7 +325,7 @@ impl Model {
                 freqs.push(p as f32 * f);
             }
         }
-        let t = Tensor::from_vec(freqs, (len, half), &self.device)?;
+        let t = Tensor::from_vec(freqs, (len, half), &Device::Cpu)?;
         Ok((t.cos()?, t.sin()?))
     }
 
@@ -288,14 +343,22 @@ impl Model {
             let m: Vec<f32> = (0..t)
                 .flat_map(|i| (0..total).map(move |j| if j > start + i { f32::NEG_INFINITY } else { 0.0 }))
                 .collect();
-            Some(Tensor::from_vec(m, (1, 1, t, total), &self.device)?)
+            Some(Tensor::from_vec(m, (1, 1, t, total), &Device::Cpu)?)
         } else {
             None
         };
         let mut x = self.embed(tokens)?;
         let scale = 1.0 / (hp.head_dim as f64).sqrt();
         let groups = hp.n_head / hp.n_head_kv;
+        // Host-built tables, copied once to the accelerator when the first offloaded layer needs them.
+        let (mut cos, mut sin, mut mask) = (cos, sin, mask);
         for (layer, cache) in self.layers.iter().zip(self.cache.iter_mut()) {
+            if !x.device().same_device(&layer.dev) {
+                x = x.to_device(&layer.dev)?;
+                cos = cos.to_device(&layer.dev)?;
+                sin = sin.to_device(&layer.dev)?;
+                mask = mask.map(|m| m.to_device(&layer.dev)).transpose()?;
+            }
             let h = candle_nn::ops::rms_norm(&x, &layer.attn_norm, hp.rms_eps as f32)?;
             let q = layer.q.forward(&h)?.reshape((1, t, hp.n_head, hp.head_dim))?;
             let k = layer.k.forward(&h)?.reshape((1, t, hp.n_head_kv, hp.head_dim))?;
@@ -335,7 +398,7 @@ impl Model {
             let u = layer.up.forward(&h)?;
             x = (x + layer.down.forward(&(g * u)?)?)?;
         }
-        let last = x.narrow(1, t - 1, 1)?;
+        let last = x.narrow(1, t - 1, 1)?.to_device(&self.out_dev)?;
         let last = candle_nn::ops::rms_norm(&last, &self.out_norm, hp.rms_eps as f32)?;
         let logits = self.output.forward(&last)?.squeeze(0)?.squeeze(0)?;
         Ok(logits.to_dtype(DType::F32)?.to_vec1::<f32>()?)

@@ -1,5 +1,6 @@
 //! Offline GGUF inference library behind the `dsh-gguf-engine` binary.
 
+pub mod device;
 pub mod engine;
 pub mod model;
 pub mod sampler;

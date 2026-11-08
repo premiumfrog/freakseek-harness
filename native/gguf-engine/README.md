@@ -28,6 +28,16 @@ cd native/gguf-engine && cargo test --release
 
 The release binary lands in `native/gguf-engine/target/release/dsh-gguf-engine` (`.exe` on Windows), where source checkouts find it. Desktop packaging copies it into the application resources as `gguf-engine/dsh-gguf-engine`.
 
+### CUDA
+
+```sh
+pnpm run build:gguf-engine:cuda     # cargo build --release --locked --features cuda
+```
+
+The `cuda` feature needs the CUDA Toolkit 12.x (`nvcc`) at build time and the NVIDIA driver plus the toolkit's cuBLAS, cuRAND, and runtime libraries at run time. Set `CUDA_COMPUTE_CAP` to the GPU's compute capability (`86` for RTX 30-series, `89` for RTX 40-series) when `nvidia-smi` is not on the build machine's `PATH`. On Windows, build from an x64 Native Tools prompt of Visual Studio 2022 Build Tools so `nvcc` finds `cl.exe`.
+
+`load` places the last `gpuLayers` transformer layers (default all) and the output head on the GPU; earlier layers and the embedding lookup run on the CPU, so a model larger than VRAM still loads with a lower `gpuLayers`. An offloaded layer's KV cache lives in VRAM while its slot is active and moves to system memory when the slot is parked. With `device: auto` the engine uses CUDA device 0 when the build has CUDA and a device opens, else the CPU.
+
 The tests cover tokenizer parity, forward-pass parity, and the protocol:
 
 - `tests/model_reference.rs` writes random `llama`, tied-output `llama`, `qwen2`, and `qwen3` models and compares the engine's logits with candle-transformers' reference implementations for prefill, incremental decoding, and KV-cache prefix reuse.
@@ -53,6 +63,7 @@ Weight types are those candle's quantized kernels load: F32, F16, BF16, Q4_0, Q4
 | File | Role |
 |---|---|
 | [`src/main.rs`](src/main.rs) | JSON-lines protocol: a reader thread answers `hello`, `inspect`, `cancel`, and `shutdown`; a worker thread runs `load`, `unload`, `status`, and `generate` in order |
+| [`src/device.rs`](src/device.rs) | Device resolution (`auto`, `cpu`, `cuda:<n>`) and trailing-layer GPU placement |
 | [`src/engine.rs`](src/engine.rs) | Header inspection, prompt preparation, prefix reuse, the generation loop, and stop strings |
 | [`src/model.rs`](src/model.rs) | Transformer forward pass over candle tensors; growable KV cache with truncation |
 | [`src/tokenizer.rs`](src/tokenizer.rs) | GGUF tokenizer: atomic special tokens, heap-ordered SentencePiece merges, ranked BPE, and incremental UTF-8 decoding |
@@ -64,7 +75,8 @@ Prefill runs in chunks of 256 tokens with a causal mask, which bounds the attent
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-- Inference is CPU-only; candle's CUDA and Metal backends are not enabled.
+- GPU offload covers CUDA only; candle's Metal backend is not enabled.
+- The forward-pass parity tests run on the CPU; CI does not exercise CUDA kernels.
 - The KV cache is F32, so long windows on large models need substantial memory.
 - Mixture-of-experts, Gemma, Phi, and other architectures are not implemented; `inspect` reports them as unsupported.
 - One process holds one model and runs one generation at a time.

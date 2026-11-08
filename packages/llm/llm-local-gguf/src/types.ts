@@ -27,12 +27,24 @@ export interface EngineModelFacts {
   readonly templateReasoning: boolean
 }
 
+/** Compute placement requested at load. */
+export interface EnginePlacement {
+  /** `auto`, `cpu`, `cuda`, or `cuda:<ordinal>`. */
+  readonly device: string
+  /** Trailing layers placed on the GPU; omitted places every layer there. */
+  readonly gpuLayers?: number
+}
+
 /** Result of loading a model. */
 export interface EngineLoaded {
   readonly facts: EngineModelFacts
   /** Effective context window after clamping to the trained length. */
   readonly contextLength: number
   readonly vocab: number
+  /** Device running the offloaded layers: `cpu`, or `cuda:<ordinal>`. */
+  readonly device: string
+  /** Layers running on that device; 0 on the CPU. */
+  readonly gpuLayers: number
 }
 
 /** Engine failure body. */
@@ -137,7 +149,7 @@ export type LocalModelsState =
   | { readonly kind: 'engine-unavailable'; readonly reason: string }
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly modelId: string }
-  | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number }
+  | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number; readonly device: string; readonly gpuLayers: number }
   | { readonly kind: 'failed'; readonly modelId: string; readonly reason: string }
 
 /** Catalog snapshot returned to configuration surfaces. */

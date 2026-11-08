@@ -15,7 +15,7 @@ const model = {
   supported: true, parameterCount: 7e9, tools: true, reasoning: false,
 }
 const idle = { state: { kind: 'idle' }, directories: ['/m'], models: [model], problems: [] }
-const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192 } }
+const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0 } }
 
 async function bench() {
   const ctx = new Context()

@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 
+use dsh_gguf_engine::device::{self, Placement};
 use dsh_gguf_engine::engine::{self, Engine, EngineError, Event, Request};
 use dsh_gguf_engine::sampler::SamplingParams;
 
@@ -25,7 +26,7 @@ enum Command {
     Hello,
     Inspect { path: PathBuf },
     #[serde(rename_all = "camelCase")]
-    Load { path: PathBuf, context_length: Option<usize>, slots: Option<usize> },
+    Load { path: PathBuf, context_length: Option<usize>, slots: Option<usize>, device: Option<String>, gpu_layers: Option<usize> },
     Unload,
     Status,
     #[serde(rename_all = "camelCase")]
@@ -87,11 +88,15 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
     for job in rx {
         let id = job.id.as_str();
         match job.command {
-            Command::Load { path, context_length, slots } => {
+            Command::Load { path, context_length, slots, device, gpu_layers } => {
                 engine = None;
-                match Engine::load(&path, context_length, slots.unwrap_or(4)) {
+                let loaded = Placement::resolve(device.as_deref(), gpu_layers).and_then(|p| Engine::load(&path, context_length, slots.unwrap_or(4), &p));
+                match loaded {
                     Ok(e) => {
-                        out.ok(id, json!({ "facts": e.facts, "contextLength": e.context_length, "vocab": e.vocab() }));
+                        out.ok(id, json!({
+                            "facts": e.facts, "contextLength": e.context_length, "vocab": e.vocab(),
+                            "device": e.device_label(), "gpuLayers": e.offloaded_layers(),
+                        }));
                         engine = Some(e);
                     }
                     Err(e) => out.fail(id, &e),
@@ -104,7 +109,10 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
             Command::Status => out.ok(
                 id,
                 match &engine {
-                    Some(e) => json!({ "loaded": true, "path": e.facts.path, "contextLength": e.context_length }),
+                    Some(e) => json!({
+                        "loaded": true, "path": e.facts.path, "contextLength": e.context_length,
+                        "device": e.device_label(), "gpuLayers": e.offloaded_layers(),
+                    }),
                     None => json!({ "loaded": false }),
                 },
             ),
@@ -175,7 +183,7 @@ fn main() {
             }
         };
         match command {
-            Command::Hello => out.ok(&env.id, json!({ "protocol": PROTOCOL_VERSION, "version": env!("CARGO_PKG_VERSION") })),
+            Command::Hello => out.ok(&env.id, json!({ "protocol": PROTOCOL_VERSION, "version": env!("CARGO_PKG_VERSION"), "cuda": device::cuda_compiled() })),
             // Header reads are cheap and must not wait behind a running generation.
             Command::Inspect { path } => match engine::inspect(&path) {
                 Ok((_, facts)) => out.ok(&env.id, json!(facts)),

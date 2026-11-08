@@ -45,6 +45,8 @@ The first request for a model loads it; a request for another model replaces it,
 | `modelDirectories` | `$DSH_HOME/models` | Directories scanned for GGUF files; `~` expands to the home directory, and an empty list selects the default |
 | `contextLength` | `32768` | Context window requested at load, clamped to the model's trained length; the agent's system prompt and tool declarations alone take roughly 10k tokens |
 | `cacheSlots` | `4` | KV caches kept at once; each conversation and each auxiliary request kind (such as session titles) uses its own, least recently used evicted first |
+| `device` | `auto` | `auto` uses CUDA device 0 when the engine was built with `--features cuda` and a device opens, else the CPU; `cpu`, `cuda`, and `cuda:<n>` force a device |
+| `gpuLayers` | all | Trailing transformer layers placed on the GPU; lower it when weights and the active KV cache exceed VRAM |
 | `maxOutputTokens` | `4096` | Output cap for requests that name none |
 | `threads` | `0` | Inference threads; `0` uses every core |
 | `temperature`, `topK`, `topP`, `minP`, `repeatPenalty` | `0.6`, `40`, `0.95`, `0.05`, `1` | Sampling controls; a request's `temperature` overrides the configured one |
@@ -127,7 +129,7 @@ The engine reuses the longest token prefix shared with the previous request of t
 <a id="known-limitations-and-deferred-work"></a>
 
 - One engine process holds one model; concurrent conversations on different models reload weights on each switch, and concurrent requests run one after another.
-- Inference runs on the CPU. GPU offload is not implemented.
+- GPU offload requires an engine built with `pnpm run build:gguf-engine:cuda`; the default build runs on the CPU.
 - Split GGUF files and I-quant weight types are not supported.
 - Templates that rely on Jinja features outside the engine's minijinja dialect fall back to ChatML.
 - Tool calling depends on the model following its template's tool format; a malformed call stays visible as text.

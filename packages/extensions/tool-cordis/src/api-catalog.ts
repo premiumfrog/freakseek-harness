@@ -7082,7 +7082,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalModelsState',
-    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
+    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n    readonly device: string;\n    readonly gpuLayers: number;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
   },
   {
     name: 'LogExporterOptions',

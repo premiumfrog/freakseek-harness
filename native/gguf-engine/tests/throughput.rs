@@ -8,6 +8,7 @@ use std::time::Instant;
 use candle_core::quantized::gguf_file::{self, Value};
 use candle_core::quantized::{GgmlDType, QTensor};
 use candle_core::{Device, Tensor};
+use dsh_gguf_engine::device::Placement;
 use dsh_gguf_engine::model::Model;
 
 fn q(shape: &[usize], dtype: GgmlDType) -> QTensor {
@@ -56,7 +57,7 @@ fn qwen2_half_billion_shape() {
     let tr: Vec<(&str, &QTensor)> = t.iter().map(|(a, b)| (a.as_str(), b)).collect();
     gguf_file::write(&mut File::create(&path).unwrap(), &mr, &tr).unwrap();
     let content = gguf_file::Content::read(&mut File::open(&path).unwrap()).unwrap();
-    let mut model = Model::load(&path, &content).unwrap();
+    let mut model = Model::load(&path, &content, &Placement::cpu()).unwrap();
     let prompt: Vec<u32> = (0..512).map(|i| (i * 37 % vocab) as u32).collect();
     let start = Instant::now();
     for chunk in prompt.chunks(256) {

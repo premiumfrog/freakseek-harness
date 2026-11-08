@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import type { EngineDelta, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EngineStart } from './types.ts'
+import type { EngineDelta, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EnginePlacement, EngineStart } from './types.ts'
 
 /** Wire protocol revision this client speaks. */
 export const ENGINE_PROTOCOL_VERSION = 1
@@ -149,10 +149,11 @@ export class EngineProcess {
    * @param path - absolute GGUF path.
    * @param contextLength - requested context window in tokens.
    * @param slots - KV cache slots the engine keeps.
+   * @param placement - compute device and offloaded layer count; `gpuLayers` omitted offloads every layer.
    * @returns loaded model facts.
    */
-  load(path: string, contextLength: number, slots: number): Promise<EngineLoaded> {
-    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots }).result
+  load(path: string, contextLength: number, slots: number, placement: EnginePlacement): Promise<EngineLoaded> {
+    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots, ...placement }).result
   }
 
   /**

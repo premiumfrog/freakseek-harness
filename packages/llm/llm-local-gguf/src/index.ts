@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
-import { Config, resolveEnginePath, resolveModelDirectories, samplingOf } from './config.ts'
+import { Config, placementOf, resolveEnginePath, resolveModelDirectories, samplingOf } from './config.ts'
 import { LocalModelRuntime } from './runtime.ts'
 import { LocalModelsService } from './service.ts'
 
@@ -44,6 +44,7 @@ export function apply(ctx: Context, config: Config): void {
     directories: () => resolveModelDirectories(config.modelDirectories.get(), env),
     contextLength: () => config.contextLength.get(),
     cacheSlots: () => config.cacheSlots,
+    placement: () => placementOf(config),
     shutdownGraceMillis: () => config.shutdownGraceMillis,
   }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) })
   ctx.effect(() => () => runtime.dispose(), 'llm-local-gguf: engine process')

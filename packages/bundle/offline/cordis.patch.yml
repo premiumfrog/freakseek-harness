@@ -69,6 +69,8 @@
       config:
         enginePath: !!js process.env.DSH_GGUF_ENGINE
         modelDirectories: !!js "process.env.DSH_LOCAL_MODEL_DIRS?.split(process.platform === 'win32' ? ';' : ':')"
+        device: !!js process.env.DSH_GGUF_DEVICE
+        gpuLayers: !!js "process.env.DSH_GGUF_GPU_LAYERS === undefined ? undefined : Number(process.env.DSH_GGUF_GPU_LAYERS)"
 
     - id: web-search-duckduckgo
       name: '@deepseek-ai/dsh-web-search-duckduckgo'

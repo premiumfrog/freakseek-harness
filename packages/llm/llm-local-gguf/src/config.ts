@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import type { Volatile } from '@deepseek-ai/cordis'
 import { expandHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import z from '@deepseek-ai/schemastery'
-import type { EngineSampling } from './types.ts'
+import type { EnginePlacement, EngineSampling } from './types.ts'
 
 /** Environment variable naming the engine executable. */
 export const ENGINE_ENV = 'DSH_GGUF_ENGINE'
@@ -25,6 +25,10 @@ export interface Config {
   contextLength: Volatile<number>
   /** KV cache slots kept at once; each conversation and auxiliary request kind uses its own. */
   cacheSlots: number
+  /** Compute device: `auto` uses CUDA device 0 when the engine was built with CUDA and one is present, else the CPU. */
+  device: string
+  /** Trailing layers placed on the GPU; omitted places every layer there. Lower it when weights and KV cache exceed VRAM. */
+  gpuLayers?: number
   /** Default per-reply output cap. */
   maxOutputTokens: Volatile<number>
   /** Inference threads; 0 uses every core. */
@@ -48,6 +52,8 @@ export const Config = z.object({
   modelDirectories: z.array(z.string()).volatile(),
   contextLength: z.number().step(1).min(256).max(1_048_576).default(32768).volatile(),
   cacheSlots: z.number().step(1).min(1).max(64).default(4),
+  device: z.string().pattern(/^(?:auto|cpu|cuda(?::\d+)?)$/).default('auto'),
+  gpuLayers: z.natural(),
   maxOutputTokens: z.number().step(1).min(1).max(1_048_576).default(4096).volatile(),
   threads: z.number().step(1).min(0).max(1024).default(0),
   temperature: z.number().min(0).max(5).default(0.6).volatile(),
@@ -134,4 +140,13 @@ export function samplingOf(config: Config): EngineSampling {
     repeatPenalty: config.repeatPenalty.get(),
     repeatLastN: 64,
   }
+}
+
+/**
+ * Read the load-time compute placement.
+ * @param config - validated configuration.
+ * @returns wire placement; `gpuLayers` is omitted when every layer should be offloaded.
+ */
+export function placementOf(config: Config): EnginePlacement {
+  return config.gpuLayers === undefined ? { device: config.device } : { device: config.device, gpuLayers: config.gpuLayers }
 }
