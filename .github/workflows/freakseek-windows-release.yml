@@ -33,7 +33,6 @@ jobs:
         shell: pwsh
     env:
       DSH_TELEMETRY_DISABLED: '1'
-      DSH_DESKTOP_AUTO_UPDATE_ENV: production
       DSH_DESKTOP_UPDATE_CHANNEL: stable
       CUDA_COMPUTE_CAP: ${{ inputs.compute_cap }}
     steps:
@@ -44,6 +43,31 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
+      - name: Install locked dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          exit $LASTEXITCODE
+      - name: Write local packaging settings
+        # Unsigned local build: production deployment metadata only; no update feed, policy, or signing is embedded.
+        run: |
+          @(
+            'DSH_DESKTOP_APP_ID=com.freakseek.desktop'
+            'DSH_DESKTOP_AUTO_UPDATE_ENV=production'
+            'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://localhost'
+            'DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL=3'
+          ) | Set-Content -Encoding utf8 -Path apps/desktop/.env.windows
+      - name: Check packaging configuration
+        run: |
+          pnpm run package:desktop:win:x64 --check --unsigned
+          exit $LASTEXITCODE
+      - name: Restore engine build cache
+        id: engine-cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: gguf-engine-cuda-${{ inputs.compute_cap }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
       - name: Install CUDA Toolkit
         id: cuda
         uses: Jimver/cuda-toolkit@v0.2.24
@@ -58,6 +82,15 @@ jobs:
           nvcc --version
           pnpm run build:gguf-engine:cuda
           exit $LASTEXITCODE
+      - name: Save engine build cache
+        # Saved immediately so a later packaging failure does not discard the CUDA compile.
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: gguf-engine-cuda-${{ inputs.compute_cap }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
       - name: Collect the CUDA DLLs the engine imports
         run: |
           $exe = 'native/gguf-engine/target/release/dsh-gguf-engine.exe'
@@ -67,14 +100,12 @@ jobs:
           if ($deps.Count -eq 0) { throw 'engine imports no CUDA runtime DLL; was it built with --features cuda?' }
           $bin = Join-Path $env:CUDA_PATH 'bin'
           foreach ($dll in $deps) { Copy-Item -LiteralPath (Join-Path $bin $dll) -Destination $out -ErrorAction Stop }
-          # nvrtc loads its builtins library at run time rather than through the import table.
+          # Libraries loaded at run time rather than through the engine's import table:
+          # cuBLAS loads cuBLASLt, and nvrtc loads its builtins.
+          if ($deps -match '^cublas64') { Get-ChildItem -Path $bin -Filter 'cublasLt64_*.dll' | Copy-Item -Destination $out }
           if ($deps -match '^nvrtc') { Get-ChildItem -Path $bin -Filter 'nvrtc-builtins64_*.dll' | Copy-Item -Destination $out }
           Get-ChildItem $out | Format-Table Name, Length
           "DSH_GGUF_ENGINE_CUDA_DIR=$out" >> $env:GITHUB_ENV
-      - name: Install locked dependencies
-        run: |
-          pnpm install --frozen-lockfile
-          exit $LASTEXITCODE
       - name: Package unsigned desktop installer
         run: |
           pnpm run package:desktop:win:x64:unsigned
