@@ -10,9 +10,10 @@
  */
 
 import type { Session } from 'electron'
+import { SCHEME } from './ipc.ts'
 
-/** URL schemes that never leave the machine. */
-const LOCAL_SCHEMES = new Set(['file:', 'data:', 'blob:', 'devtools:', 'chrome:', 'chrome-extension:', 'about:'])
+/** URL schemes that never leave the machine; `dsh-app:` is the application's own in-process protocol. */
+const LOCAL_SCHEMES = new Set([`${SCHEME}:`, 'file:', 'data:', 'blob:', 'devtools:', 'chrome:', 'chrome-extension:', 'about:'])
 
 /** Schemes that carry network traffic and are allowed only to loopback hosts. */
 const NETWORK_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:'])

@@ -4,7 +4,7 @@ import { installOfflineNetworkPolicy, isOfflineAllowed } from '../src/offline-ne
 
 it.each([
   'http://127.0.0.1:4317/', 'ws://127.0.0.1:4317/rpc', 'https://localhost/x', 'http://app.localhost/', 'http://[::1]:80/',
-  'file:///Applications/x/index.html', 'data:text/plain,hi', 'blob:http://127.0.0.1/abc', 'devtools://devtools/bundled/x',
+  'dsh-app://app/', 'dsh-app://shell/update-dialog.html', 'file:///Applications/x/index.html', 'data:text/plain,hi', 'blob:http://127.0.0.1/abc', 'devtools://devtools/bundled/x',
 ])('allows %s', (url) => {
   expect(isOfflineAllowed(url)).toBe(true)
 })
