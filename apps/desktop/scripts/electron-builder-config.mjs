@@ -66,7 +66,8 @@ export function createElectronBuilderConfig(
   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+  // Unsigned builds are local artifacts with no update deployment, so they embed no mandatory-update policy.
+  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
@@ -164,6 +165,8 @@ export function createElectronBuilderConfig(
         from: process.env.DSH_GGUF_ENGINE_BUILD ?? fileURLToPath(new URL(`../../../native/gguf-engine/target/release/${packagesWindows ? 'dsh-gguf-engine.exe' : 'dsh-gguf-engine'}`, import.meta.url)),
         to: `gguf-engine/${packagesWindows ? 'dsh-gguf-engine.exe' : 'dsh-gguf-engine'}`,
       },
+      // CUDA runtime libraries the CUDA engine build links (cuBLAS, cuRAND, runtime), copied beside the engine so it loads them first.
+      ...(env.DSH_GGUF_ENGINE_CUDA_DIR ? [{ from: env.DSH_GGUF_ENGINE_CUDA_DIR, to: 'gguf-engine', filter: ['*.dll', '*.so*'] }] : []),
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),

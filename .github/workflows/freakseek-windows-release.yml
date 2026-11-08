@@ -1,0 +1,110 @@
+name: FreakSeek · Windows x64 CUDA release
+
+# Builds the CUDA GGUF engine, bundles the CUDA runtime DLLs it links beside it,
+# packages the unsigned desktop installer, and publishes it as a GitHub Release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update
+        type: string
+        default: freakseek-v0.1.0
+        required: true
+      compute_cap:
+        description: CUDA compute capability the kernels target (86 = RTX 30-series; PTX also runs on newer GPUs)
+        type: string
+        default: '86'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: freakseek-windows-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_DESKTOP_AUTO_UPDATE_ENV: production
+      DSH_DESKTOP_UPDATE_CHANNEL: stable
+      CUDA_COMPUTE_CAP: ${{ inputs.compute_cap }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+      - name: Install CUDA Toolkit
+        id: cuda
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          cuda: '12.6.3'
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "curand", "curand_dev", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
+      - name: Enter MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+      - name: Build CUDA GGUF engine
+        run: |
+          nvcc --version
+          pnpm run build:gguf-engine:cuda
+          exit $LASTEXITCODE
+      - name: Collect the CUDA DLLs the engine imports
+        run: |
+          $exe = 'native/gguf-engine/target/release/dsh-gguf-engine.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'cuda-dlls'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $deps = dumpbin /dependents $exe | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^(cublas|cublasLt|curand|cudart|nvrtc)\S*\.dll$' }
+          if ($deps.Count -eq 0) { throw 'engine imports no CUDA runtime DLL; was it built with --features cuda?' }
+          $bin = Join-Path $env:CUDA_PATH 'bin'
+          foreach ($dll in $deps) { Copy-Item -LiteralPath (Join-Path $bin $dll) -Destination $out -ErrorAction Stop }
+          # nvrtc loads its builtins library at run time rather than through the import table.
+          if ($deps -match '^nvrtc') { Get-ChildItem -Path $bin -Filter 'nvrtc-builtins64_*.dll' | Copy-Item -Destination $out }
+          Get-ChildItem $out | Format-Table Name, Length
+          "DSH_GGUF_ENGINE_CUDA_DIR=$out" >> $env:GITHUB_ENV
+      - name: Install locked dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          exit $LASTEXITCODE
+      - name: Package unsigned desktop installer
+        run: |
+          pnpm run package:desktop:win:x64:unsigned
+          exit $LASTEXITCODE
+      - name: Locate installer
+        id: installer
+        run: |
+          $root = 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts'
+          Get-ChildItem -Recurse $root | Format-Table FullName, Length
+          $exe = Get-ChildItem -Recurse -Path $root -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if ($null -eq $exe) { throw 'no installer produced' }
+          $name = "FreakSeek-${{ inputs.tag }}-win-x64-cuda-setup.exe"
+          Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $env:RUNNER_TEMP $name)
+          "path=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: freakseek-win-x64-cuda
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: FreakSeek ${{ inputs.tag }} (Windows x64, CUDA)
+          prerelease: true
+          files: ${{ steps.installer.outputs.path }}
+          body: |
+            Unsigned Windows x64 desktop build with the CUDA GGUF engine (kernels for compute capability ${{ inputs.compute_cap }}).
+            Requires an NVIDIA driver supporting CUDA 12.6; the cuBLAS, cuRAND, and CUDA runtime DLLs are bundled.
+            Windows SmartScreen warns about unsigned installers: choose More info → Run anyway.
+            Put .gguf files in %USERPROFILE%\.dsh\models, then open Settings → Local models and select Load.
