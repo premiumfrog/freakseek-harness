@@ -34,9 +34,9 @@ The release binary lands in `native/gguf-engine/target/release/dsh-gguf-engine` 
 pnpm run build:gguf-engine:cuda     # cargo build --release --locked --features cuda
 ```
 
-The `cuda` feature needs the CUDA Toolkit 12.x (`nvcc`) at build time and the NVIDIA driver plus the toolkit's cuBLAS, cuRAND, and runtime libraries at run time. Set `CUDA_COMPUTE_CAP` to the GPU's compute capability (`86` for RTX 30-series, `89` for RTX 40-series) when `nvidia-smi` is not on the build machine's `PATH`. On Windows, build from an x64 Native Tools prompt of Visual Studio 2022 Build Tools so `nvcc` finds `cl.exe`.
+The `cuda` feature needs the CUDA Toolkit 12.x (`nvcc`) at build time and the NVIDIA driver plus the toolkit's cuBLAS, cuRAND, and runtime libraries at run time. `CUDA_COMPUTE_CAP` sets the lowest compute capability the kernels support; FreakSeek releases use `75` (RTX 20-series), and newer GPUs (RTX 30, 40, and 50-series and workstation cards) compile the kernels' PTX on first use and cache it. Without the variable the build targets the GPU that `nvidia-smi` reports. On Windows, build from an x64 Native Tools prompt of Visual Studio 2022 Build Tools so `nvcc` finds `cl.exe`.
 
-`load` places the last `gpuLayers` transformer layers (default all) and the output head on the GPU; earlier layers and the embedding lookup run on the CPU, so a model larger than VRAM still loads with a lower `gpuLayers`. An offloaded layer's KV cache lives in VRAM while its slot is active and moves to system memory when the slot is parked. With `device: auto` the engine uses CUDA device 0 when the build has CUDA and a device opens, else the CPU.
+`load` places the last `gpuLayers` transformer layers (default all) and the output head on the GPU; earlier layers and the embedding lookup run on the CPU, so a model larger than VRAM still loads with a lower `gpuLayers`. An offloaded layer's KV cache lives in VRAM while its slot is active and moves to system memory when the slot is parked. With `device: auto` the engine uses CUDA device 0 when the build has CUDA and the device meets that minimum, else the CPU. The `devices` operation reports each GPU's name, compute capability, and free and total memory.
 
 The tests cover tokenizer parity, forward-pass parity, and the protocol:
 

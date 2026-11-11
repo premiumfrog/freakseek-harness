@@ -61,6 +61,13 @@ fn load_generate_reuse_cache_and_shutdown() {
     e.send(json!({"id": "h", "op": "hello"}));
     assert_eq!(e.until_result("h")[0]["value"]["protocol"], 1);
 
+    e.send(json!({"id": "d", "op": "devices"}));
+    let devices = &e.until_result("d")[0]["value"];
+    assert!(devices["minComputeCapability"].as_u64().is_some());
+    if devices["cuda"] == false {
+        assert_eq!(devices["devices"], json!([]));
+    }
+
     e.send(json!({"id": "i", "op": "inspect", "path": path}));
     let facts = &e.until_result("i")[0]["value"];
     assert_eq!(facts["architecture"], "qwen2");

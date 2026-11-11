@@ -76,8 +76,17 @@ export async function validateModelFile(path: unknown): Promise<string> {
 export async function addImport(file: string, path: string): Promise<void> {
   const files = await readImports(file)
   if (files.includes(path)) return
+  await writeJsonAtomic(file, { version: IMPORTS_VERSION, files: [...files, path] })
+}
+
+/**
+ * Write a JSON document by replacing the file atomically, creating its folder when missing.
+ * @param file - target file.
+ * @param value - JSON-serializable document.
+ */
+export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
   await mkdir(dirname(file), { recursive: true })
-  const temporary = `${file}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify({ version: IMPORTS_VERSION, files: [...files, path] }, null, 2)}\n`)
+  const temporary = `${file}.${String(process.pid)}.tmp`
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`)
   await rename(temporary, file)
 }

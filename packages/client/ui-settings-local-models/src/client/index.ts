@@ -15,7 +15,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: the conversation SlotMap merge (the composer's 'conversation.input.model' seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { LocalModelsController } from './controller.ts'
-import type { ModelFilePicker } from './controller.ts'
+import type { ModelFilePicker, SeatSessionId } from './controller.ts'
 import { ModelFileButton } from './ModelFileButton.tsx'
 import type { ModelFileButtonInjected } from './ModelFileButton.tsx'
 import { LocalModelsSection } from './LocalModelsSection.tsx'
@@ -59,24 +59,45 @@ export function apply(ctx: ClientContext): void {
     load: (modelId) => { void controller.load(modelId) },
     ...picker === undefined ? {} : { loadFile: () => { void controller.loadFile(picker) } },
     unload: () => { void controller.unload() },
+    setCollection: (id) => { void controller.setActiveCollection(id) },
+    createCollection: name => controller.createCollection(name),
+    setCopy: (copy) => { controller.setCopyIntoCollection(copy) },
   })
   if (picker !== undefined) {
     // The composer's model seat opens the file dialog, then switches its conversation to the loaded model.
     ctx.inject(['remote.session'], (scope: ClientContext) => {
+      const select = async (sessionId: SeatSessionId, modelId: string | undefined) => {
+        if (modelId === undefined) return
+        const selected = await scope.remote.session.selectModel({ sessionId, provider: 'local', model: modelId })
+        if (!selected.ok) controller.fail(selected.error.message)
+      }
       scope.slots.inject('conversation.input.model', () => scope.slots.register({
         name: 'conversation.input.model',
         locale: NS,
         inject: (sessionId): ModelFileButtonInjected => ({
           hooks: { models: controller.store },
-          pick: () => {
-            void controller.loadFile(picker).then(async (modelId) => {
-              if (modelId === undefined) return
-              const selected = await scope.remote.session.selectModel({ sessionId, provider: 'local', model: modelId })
-              if (!selected.ok) controller.fail(selected.error.message)
-            })
-          },
+          pick: () => { void controller.loadFile(picker).then(modelId => select(sessionId, modelId)) },
+          setCollection: (id) => { void controller.setActiveCollection(id) },
+          createCollection: name => controller.createCollection(name),
+          setCopy: (copy) => { controller.setCopyIntoCollection(copy) },
+          register: visible => controller.registerSeat({ sessionId, visible }),
         }),
       }, ModelFileButton))
+      // The FreakSeek shell announces GGUF files dropped on the window; the first one opens like a chosen file.
+      scope.effect(() => {
+        // Only a window can receive the shell's event; other hosts of this bundle have none.
+        if (typeof globalThis.addEventListener !== 'function') return () => {}
+        const onDrop = (event: Event) => {
+          const detail = (event as CustomEvent<{ paths?: unknown }>).detail
+          const paths = Array.isArray(detail.paths) ? detail.paths : []
+          const path = paths.find((candidate): candidate is string => typeof candidate === 'string' && /\.gguf$/iu.test(candidate))
+          if (path === undefined) return
+          const sessionId = controller.visibleSession()
+          void controller.openPath(path).then(modelId => sessionId === undefined ? undefined : select(sessionId, modelId))
+        }
+        globalThis.addEventListener('freakseek:gguf-dropped', onDrop)
+        return () => { globalThis.removeEventListener('freakseek:gguf-dropped', onDrop) }
+      }, 'ui-settings-local-models: dropped GGUF files')
     })
   }
   ctx.slots.inject('settings.section', () => ctx.slots.register({

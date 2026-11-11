@@ -59,6 +59,8 @@
       name: '@deepseek-ai/dsh-llm-local-gguf'
       config:
         enginePath: !!js process.env.DSH_GGUF_ENGINE
+        engineDirectory: !!js process.env.DSH_GGUF_ENGINE_DIR
+        modelsRoot: !!js process.env.DSH_LOCAL_MODELS_ROOT
         modelDirectories: !!js "process.env.DSH_LOCAL_MODEL_DIRS?.split(process.platform === 'win32' ? ';' : ':')"
         device: !!js process.env.DSH_GGUF_DEVICE
         gpuLayers: !!js "process.env.DSH_GGUF_GPU_LAYERS === undefined ? undefined : Number(process.env.DSH_GGUF_GPU_LAYERS)"

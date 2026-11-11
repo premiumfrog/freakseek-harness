@@ -24,6 +24,7 @@ const PROTOCOL_VERSION: u32 = 1;
 #[serde(tag = "op", rename_all = "camelCase")]
 enum Command {
     Hello,
+    Devices,
     Inspect { path: PathBuf },
     #[serde(rename_all = "camelCase")]
     Load { path: PathBuf, context_length: Option<usize>, slots: Option<usize>, device: Option<String>, gpu_layers: Option<usize> },
@@ -133,7 +134,7 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
                     Err(err) => out.fail(id, &err),
                 }
             }
-            Command::Hello | Command::Inspect { .. } | Command::Cancel { .. } | Command::Shutdown => unreachable!("handled by the reader"),
+            Command::Hello | Command::Devices | Command::Inspect { .. } | Command::Cancel { .. } | Command::Shutdown => unreachable!("handled by the reader"),
         }
     }
 }
@@ -184,6 +185,13 @@ fn main() {
         };
         match command {
             Command::Hello => out.ok(&env.id, json!({ "protocol": PROTOCOL_VERSION, "version": env!("CARGO_PKG_VERSION"), "cuda": device::cuda_compiled() })),
+            // Device queries touch no model and answer even while a generation runs.
+            Command::Devices => match device::devices() {
+                Ok(list) => out.ok(&env.id, json!({
+                    "cuda": device::cuda_compiled(), "minComputeCapability": device::min_compute_capability(), "devices": list,
+                })),
+                Err(e) => out.fail(&env.id, &e),
+            },
             // Header reads are cheap and must not wait behind a running generation.
             Command::Inspect { path } => match engine::inspect(&path) {
                 Ok((_, facts)) => out.ok(&env.id, json!(facts)),

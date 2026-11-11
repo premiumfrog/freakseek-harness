@@ -1,10 +1,12 @@
 /** Launch the Desktop profile through the Web application and report its URL to Electron. */
 
+import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PluginOperationRunId } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
 import { formatFatalDiagnostic } from './fatal-diagnostic.ts'
-import { loadLayeredEnv, loadProfileDirectory, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
+import { initProfile, loadLayeredEnv, loadProfileDirectory, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
+import { DESKTOP_PROFILE_TEMPLATE } from '@deepseek-ai/dsh-official-bundles'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -18,12 +20,15 @@ import { installDesktopQuitInspection } from './quit-inspection.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
 import { installOperationDiagnostics } from './operation-diagnostics.ts'
+import { selectControlChannel, type ControlChannel } from './control-channel.ts'
 
-async function main(): Promise<void> {
+async function main(channel: ControlChannel): Promise<void> {
   const runId = randomUUID() as PluginOperationRunId
-  if (process.connected) process.send?.({ type: 'starting', runId }, (error) => { if (error !== null) console.error(error) })
+  channel.send({ type: 'starting', runId }).catch((error: unknown) => { console.error(error) })
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
+  // A native shell hands over a bare data directory; Electron prepares the project itself.
+  if (channel.kind === 'stdio' && !existsSync(join(projectDir, 'package.json'))) initProfile(projectDir, DESKTOP_PROFILE_TEMPLATE.bundles)
   installOfficeEngineResolution(runtimeDir)
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
@@ -54,10 +59,7 @@ async function main(): Promise<void> {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
   } = {}
-  const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
-    if (!process.connected || process.send === undefined) { resolve(); return }
-    process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
-  })
+  const send = (message: object): Promise<void> => channel.send(message)
   const stop = (): Promise<void> => stopping ??= (async () => {
     for (const abort of dragReads.values()) abort.abort()
     await Promise.allSettled(dragTasks)
@@ -65,12 +67,12 @@ async function main(): Promise<void> {
     const running = await application.catch(() => undefined)
     await running?.shutdown.shutdown(0)
     await send({ type: 'shutdown-complete' })
-    if (process.connected) process.disconnect()
+    channel.disconnect()
     // A handle a disposed plugin left open would otherwise keep the Host alive past the shell's graceful
     // deadline; a startup failure keeps its own diagnostic exit.
     if (running !== undefined) process.exit()
   })()
-  process.on('message', (message: unknown) => {
+  channel.onMessage((message: unknown) => {
     if (typeof message !== 'object' || message === null || !('type' in message)) return
     if (message.type === 'shutdown') { void stop(); return }
     if (message.type === 'file-drag-cancel') {
@@ -127,33 +129,38 @@ async function main(): Promise<void> {
       }
     })().catch((error: unknown) => { console.error(error) })
   })
-  process.once('disconnect', () => { void stop() })
+  channel.onceDisconnect(() => { void stop() })
   const { ctx } = await application
   installOperationDiagnostics(ctx, record => send({ type: 'plugin-operation', record }), 32, runId)
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   control.quitInspection = installDesktopQuitInspection(ctx)
-  await ctx.plugin(desktopOffice, {
-    runtimeDir,
-    source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
-    root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
-  })
+  const officeSource = process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime')
+  if (existsSync(officeSource)) {
+    await ctx.plugin(desktopOffice, { runtimeDir, source: officeSource, root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime') })
+  } else {
+    // The portable FreakSeek folder ships no Office payload; the skills stay unavailable.
+    console.warn(`desktop host: no primary runtime at ${officeSource}; Office skills are unavailable`)
+  }
   installPlatformSessionPublisher(ctx, (session) => {
-    if (process.connected) process.send?.({ type: 'platform-session', session })
+    channel.send({ type: 'platform-session', session }).catch((error: unknown) => { console.error(error) })
   })
   const url = ctx.connection.authenticatedUrl(`${ctx.webServer.protocol}//127.0.0.1:${String(ctx.webServer.port)}`)
-  if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections(ctx.connection.browserPeer) }, (error) => { if (error !== null) console.error(error) })
+  channel.send({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections(ctx.connection.browserPeer) })
+    .catch((error: unknown) => { console.error(error) })
 }
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
+  const channel = selectControlChannel(process, process.env)
+  main(channel).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)
     // The shell receives the complete inspected error here, not through stderr:
     // stderr bytes and this IPC message race, and the shell reports the first
     // failure it sees.
     const diagnostic = formatFatalDiagnostic(error)
-    if (process.connected) process.send?.({ type: 'fatal', message, diagnostic }, (error) => { if (error !== null) console.error(error) })
+    void channel.send({ type: 'fatal', message, diagnostic }).catch((sendError: unknown) => { console.error(sendError) }).finally(() => {
+      channel.disconnect()
+    })
     console.error(error)
     process.exitCode = 1
-    if (process.connected) process.disconnect()
   })
 }

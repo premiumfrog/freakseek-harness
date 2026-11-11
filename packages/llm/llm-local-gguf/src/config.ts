@@ -10,16 +10,26 @@ import { fileURLToPath } from 'node:url'
 import type { Volatile } from '@deepseek-ai/cordis'
 import { expandHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import z from '@deepseek-ai/schemastery'
-import type { EnginePlacement, EngineSampling } from './types.ts'
+import type { EngineCandidate, EnginePlacement, EngineSampling } from './types.ts'
 
 /** Environment variable naming the engine executable. */
 export const ENGINE_ENV = 'DSH_GGUF_ENGINE'
 
+/** Environment variable naming a directory with `cuda/` and `cpu/` engine builds. */
+export const ENGINE_DIR_ENV = 'DSH_GGUF_ENGINE_DIR'
+
+/** Environment variable naming the models root whose subfolders are collections. */
+export const MODELS_ROOT_ENV = 'DSH_LOCAL_MODELS_ROOT'
+
 /** Plugin configuration. */
 export interface Config {
-  /** Engine executable; omitted resolves through {@link resolveEnginePath}. */
+  /** Engine executable; omitted resolves through {@link resolveEngineCandidates}. */
   enginePath?: string
-  /** Directories scanned for `.gguf` files, `~`-expanded; omitted or empty scans `$DSH_HOME/models`. */
+  /** Directory holding `cuda/` and `cpu/` engine builds; `device: auto` prefers the CUDA one and falls back to the CPU one. */
+  engineDirectory?: string
+  /** Models root whose subfolders are collections; omitted resolves to `$DSH_HOME/models`. Unused when `modelDirectories` is set. */
+  modelsRoot?: string
+  /** Directories scanned for `.gguf` files, `~`-expanded; a nonempty list replaces collections under {@link Config.modelsRoot}. */
   modelDirectories: Volatile<string[] | undefined>
   /** Context window requested at load, clamped by the engine to the trained length. */
   contextLength: Volatile<number>
@@ -51,6 +61,8 @@ export interface Config {
 
 export const Config = z.object({
   enginePath: z.string(),
+  engineDirectory: z.string(),
+  modelsRoot: z.string(),
   modelDirectories: z.array(z.string()).volatile(),
   contextLength: z.number().step(1).min(256).max(1_048_576).default(32768).volatile(),
   cacheSlots: z.number().step(1).min(1).max(64).default(4),
@@ -77,7 +89,34 @@ export function engineFileName(platform: NodeJS.Platform = process.platform): st
 }
 
 /**
- * Resolve the engine executable: the configured path, then `$DSH_GGUF_ENGINE`,
+ * Resolve the engine executables to try, in order: the configured path or `$DSH_GGUF_ENGINE` alone; else an engine
+ * directory (`engineDirectory` or `$DSH_GGUF_ENGINE_DIR`) offering its `cuda/` then `cpu/` build; else the single
+ * executable {@link resolveEnginePath} finds.
+ * @param configured - `enginePath` and `engineDirectory` from configuration.
+ * @param env - launch environment.
+ * @param resourcesPath - Electron `process.resourcesPath`, when running in the desktop app.
+ * @returns the candidates, or a reason none exists.
+ */
+export function resolveEngineCandidates(
+  configured: { readonly enginePath?: string | undefined; readonly engineDirectory?: string | undefined },
+  env: Readonly<Record<string, string | undefined>>,
+  resourcesPath: string | undefined,
+): { readonly candidates: readonly EngineCandidate[] } | { readonly reason: string } {
+  const explicit = configured.enginePath ?? env[ENGINE_ENV]
+  const directory = configured.engineDirectory ?? env[ENGINE_DIR_ENV]
+  if ((explicit === undefined || explicit === '') && directory !== undefined && directory !== '') {
+    const root = resolve(expandHomePath(directory))
+    const candidates = (['cuda', 'cpu'] as const)
+      .map(accelerator => ({ path: join(root, accelerator, engineFileName()), accelerator }))
+      .filter(candidate => existsSync(candidate.path))
+    return candidates.length > 0 ? { candidates } : { reason: `no local model engine in ${root}/cuda or ${root}/cpu` }
+  }
+  const single = resolveEnginePath(explicit, env, resourcesPath)
+  return 'reason' in single ? single : { candidates: [{ path: single.path, accelerator: 'unknown' }] }
+}
+
+/**
+ * Resolve one engine executable: the configured path, then `$DSH_GGUF_ENGINE`,
  * then a desktop resources copy, then a repository release build.
  * @param configured - `enginePath` from configuration.
  * @param env - launch environment.
@@ -106,6 +145,32 @@ export function resolveEnginePath(
   return found === undefined
     ? { reason: `local model engine not found; build it with \`cargo build --release\` in native/gguf-engine or set ${ENGINE_ENV}` }
     : { path: found }
+}
+
+/** Where the catalog comes from: collections under one root, or explicitly configured directories. */
+export type ModelSource =
+  | { readonly kind: 'collections'; readonly root: string }
+  | { readonly kind: 'directories'; readonly directories: readonly string[] }
+
+/**
+ * Resolve the model source: a nonempty `modelDirectories` list keeps those directories; otherwise collections live
+ * under `modelsRoot`, then `$DSH_LOCAL_MODELS_ROOT`, then `$DSH_HOME/models`.
+ * @param configured - `modelDirectories` and `modelsRoot` from configuration.
+ * @param env - launch environment.
+ * @returns the source.
+ */
+export function resolveModelSource(
+  configured: { readonly modelDirectories?: readonly string[] | undefined; readonly modelsRoot?: string | undefined },
+  env: Readonly<Record<string, string | undefined>>,
+): ModelSource {
+  if (configured.modelDirectories !== undefined && configured.modelDirectories.length > 0) {
+    return { kind: 'directories', directories: resolveModelDirectories(configured.modelDirectories, env) }
+  }
+  const root = configured.modelsRoot ?? env[MODELS_ROOT_ENV]
+  return {
+    kind: 'collections',
+    root: root === undefined || root === '' ? join(resolveDshHome(undefined, env), 'models') : resolve(expandHomePath(root)),
+  }
 }
 
 /**
@@ -152,6 +217,15 @@ export function samplingOf(config: Config): EngineSampling {
  */
 export function placementOf(config: Config): EnginePlacement {
   return config.gpuLayers === undefined ? { device: config.device } : { device: config.device, gpuLayers: config.gpuLayers }
+}
+
+/**
+ * Resolve the local models state file (the active collection), kept beside the imported-models list.
+ * @param importsFile - resolved imported-models list.
+ * @returns the absolute file path.
+ */
+export function resolveStateFile(importsFile: string): string {
+  return join(dirname(importsFile), 'state.json')
 }
 
 /**

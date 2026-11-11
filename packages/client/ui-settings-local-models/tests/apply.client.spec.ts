@@ -16,22 +16,30 @@ const model = {
 }
 const idle = { state: { kind: 'idle' }, directories: ['/m'], models: [model], problems: [] }
 const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0 } }
+const collected = {
+  ...idle, collections: { root: '/m', active: '', items: [{ id: '', modelCount: 1 }, { id: 'coding', modelCount: 0 }] },
+}
 
-async function bench(picker?: { pick: () => Promise<string | null> }) {
+async function bench(picker?: { pick: () => Promise<string | null> }, first: object = idle) {
   if (picker !== undefined) vi.stubGlobal('__DSH_GGUF_PICKER__', picker)
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('en')
   ctx.provide('locale', locale)
-  const snapshot = vi.fn(() => Promise.resolve({ ok: true, value: idle }))
+  const snapshot = vi.fn(() => Promise.resolve({ ok: true, value: first }))
   const load = vi.fn(() => Promise.resolve({ ok: true, value: { ok: true, snapshot: loaded } }))
   const unload = vi.fn(() => Promise.resolve({ ok: false, error: new RemoteError('gateway/internal', 'host gone', {}) }))
   const picked = { ok: true, modelId: 'file:/picked/m', snapshot: loaded }
   const loadFile = vi.fn((_path: string) => Promise.resolve({ ok: true, value: picked }))
   type Selection = { sessionId: string; provider: string; model: string }
   const selectModel = vi.fn((_request: Selection) => Promise.resolve({ ok: true, value: undefined }))
-  const remote = new TestRemote(ctx, { localModels: { snapshot, load, loadFile, unload }, session: { selectModel } })
+  const importFile = vi.fn((_path: string) => Promise.resolve({ ok: true, value: { ok: true, modelId: 'coding/m', snapshot: loaded } }))
+  const setActiveCollection = vi.fn((_id: string) => Promise.resolve({ ok: true, value: { ok: true, snapshot: collected } }))
+  const createCollection = vi.fn((_name: string) => Promise.resolve({ ok: true, value: { ok: true, snapshot: collected } }))
+  const remote = new TestRemote(ctx, {
+    localModels: { snapshot, load, loadFile, importFile, setActiveCollection, createCollection, unload }, session: { selectModel },
+  })
   const slots = ctx.get('slots') as SlotRegistry
   slots.register({ name: 'root', children: {
     'settings.section': { kind: 'list', scope: 'root' }, 'conversation.input.model': { kind: 'single', scope: 'session' },
@@ -40,7 +48,9 @@ async function bench(picker?: { pick: () => Promise<string | null> }) {
   await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
   const entry = slots.entries('settings.section')[0]!
   const face = (entry.inject as () => LocalModelsSectionInjected)()
-  return { ctx, entry, face, snapshot, load, loadFile, unload, selectModel, remote, slots }
+  return {
+    ctx, entry, face, snapshot, load, loadFile, importFile, setActiveCollection, createCollection, unload, selectModel, remote, slots,
+  }
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -127,5 +137,43 @@ describe('ui-settings-local-models apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     const face = (slots.entries('settings.section')[0]!.inject as () => LocalModelsSectionInjected)()
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().unavailable).toBe(true) })
+  })
+
+  it('copies a chosen file into the active collection, or loads it in place when copying is off', async () => {
+    const pick = vi.fn<() => Promise<string | null>>().mockResolvedValue('/picked/m.gguf')
+    const { face, slots, loadFile, importFile, selectModel } = await bench({ pick }, collected)
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toMatchObject({ collections: { active: '' } }) })
+    const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
+    seat.pick()
+    await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-1', provider: 'local', model: 'coding/m' }) })
+    expect(importFile).toHaveBeenCalledWith('/picked/m.gguf')
+    seat.setCopy(false)
+    seat.pick()
+    await vi.waitFor(() => { expect(loadFile).toHaveBeenCalledWith('/picked/m.gguf') })
+    expect(importFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches and creates collections from the composer seat', async () => {
+    const { slots, setActiveCollection, createCollection } = await bench({ pick: () => Promise.resolve(null) }, collected)
+    await vi.waitFor(() => { expect(slots.entries('conversation.input.model')).toHaveLength(1) })
+    const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
+    seat.setCollection('coding')
+    await vi.waitFor(() => { expect(setActiveCollection).toHaveBeenCalledWith('coding') })
+    expect(await seat.createCollection('chat')).toBe(true)
+    expect(createCollection).toHaveBeenCalledWith('chat')
+  })
+
+  it('opens the first GGUF file dropped on the window for the conversation on screen', async () => {
+    const target = new EventTarget()
+    vi.stubGlobal('addEventListener', target.addEventListener.bind(target))
+    vi.stubGlobal('removeEventListener', target.removeEventListener.bind(target))
+    const { slots, importFile, selectModel, face } = await bench({ pick: () => Promise.resolve(null) }, collected)
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toMatchObject({ collections: { active: '' } }) })
+    const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-2')
+    const release = seat.register(() => true)
+    target.dispatchEvent(new CustomEvent('freakseek:gguf-dropped', { detail: { paths: ['/notes.txt', '/dropped/m.gguf'] } }))
+    await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-2', provider: 'local', model: 'coding/m' }) })
+    expect(importFile).toHaveBeenCalledWith('/dropped/m.gguf')
+    release()
   })
 })

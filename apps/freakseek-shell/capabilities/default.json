@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "runtime-pickers",
+  "description": "The FreakSeek page served by the bundled runtime on loopback may open the native folder and model-file dialogs, and nothing else.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*"] },
+  "permissions": ["allow-pick-directory", "allow-pick-gguf"]
+}

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop-host",
-  "description": "Private Node-mode host process for the Electron desktop application",
+  "description": "Private Node-mode host process for the FreakSeek desktop shells (Electron IPC or the Tauri shell over stdio)",
   "version": "0.2.2-rc.1",
   "private": true,
   "license": "MIT",
@@ -26,7 +26,8 @@
     "@deepseek-ai/dsh-skill-office": "workspace:*",
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
-    "@deepseek-ai/dsh-plugin-manager": "workspace:*"
+    "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+    "@deepseek-ai/dsh-official-bundles": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",

@@ -1215,6 +1215,28 @@ Remote service over one plugin instance's LocalModelRuntime.
 @Remote('loadFile') async loadFile(path: string): Promise<LocalModelsFileResult>
 
 /**
+ * Copy a GGUF file from anywhere on disk into the active collection, load the copy, and make it the default model
+ * of new conversations when the deployment has one.
+ * @param path - absolute path to a `.gguf` file, such as one chosen in the desktop file dialog or dropped on the window.
+ * @returns the copy's model id and the snapshot after loading, or the failure reason.
+ */
+@Remote('importFile') async importFile(path: string): Promise<LocalModelsFileResult>
+
+/**
+ * Create a collection folder under the models root and make it the active collection.
+ * @param name - folder name: 1–64 characters, portable on Windows.
+ * @returns the snapshot listing the new, empty collection, or the failure reason.
+ */
+@Remote('createCollection') async createCollection(name: string): Promise<LocalModelsActionResult>
+
+/**
+ * Make a collection active, so the catalog lists its models; a loaded model stays loaded.
+ * @param id - collection id from the snapshot; `''` selects the models root.
+ * @returns the snapshot after switching, or the failure reason.
+ */
+@Remote('setActiveCollection') async setActiveCollection(id: string): Promise<LocalModelsActionResult>
+
+/**
  * Release the loaded model's memory.
  * @returns the snapshot after unloading, or the failure reason.
  */

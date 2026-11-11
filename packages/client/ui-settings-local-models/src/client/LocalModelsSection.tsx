@@ -1,5 +1,6 @@
 /** Local models settings section: the GGUF catalog with load and unload actions. */
 
+import { useState } from 'react'
 import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalModelEntry } from '@deepseek-ai/dsh-api-remotes/client'
@@ -18,6 +19,12 @@ export type LocalModelsSectionInjected = {
   /** Open the desktop file dialog and load the chosen GGUF file; absent outside the desktop app. */
   loadFile?: () => void
   unload: () => void
+  /** Make a collection active; `''` is the models folder itself. */
+  setCollection: (id: string) => void
+  /** Create a collection and make it active; resolves to whether it was created. */
+  createCollection: (name: string) => Promise<boolean>
+  /** Choose whether chosen files are copied into the active collection. */
+  setCopy: (copy: boolean) => void
 }
 
 /** Props the renderer binds for the section. */
@@ -40,8 +47,14 @@ function parameterCount(count: number): string {
 }
 
 /** Render the section. */
-export function LocalModelsSection({ t, useModels, refresh, load, loadFile, unload }: LocalModelsSectionProps) {
+export function LocalModelsSection({
+  t, useModels, refresh, load, loadFile, unload, setCollection, createCollection, setCopy,
+}: LocalModelsSectionProps) {
   const page = useModels(value => value)
+  const [name, setName] = useState('')
+  const collections = page.snapshot?.collections
+  const engine = page.snapshot?.engine
+  const collectionName = (id: string) => id === '' ? t('collection.default') : id
   const snapshot = page.snapshot
   const state = snapshot?.state
   const busy = page.pending !== undefined
@@ -96,6 +109,45 @@ export function LocalModelsSection({ t, useModels, refresh, load, loadFile, unlo
         </div>
       </div>
       <p className={css.intro}>{t('intro')}</p>
+      {engine !== undefined && (
+        <p className={css.engine}>
+          {engine.accelerator === 'cuda'
+            ? t('engine.cuda', { gpus: engine.devices.filter(d => d.supported).map(d => d.name).join(', ') })
+            : t('engine.cpu')}
+          {engine.fallbackReason !== undefined && <span className={css.engineReason}>{t('engine.fallback', { reason: engine.fallbackReason })}</span>}
+        </p>
+      )}
+      {collections !== undefined && (
+        <div className={css.collections}>
+          <div className={css.foldersTitle}>{t('collections.title')}</div>
+          <p className={css.foldersHint}>{t('collections.hint', { root: collections.root })}</p>
+          <ul className={css.collectionList}>
+            {collections.items.map(item => (
+              <li key={item.id} className={css.collection} data-active={item.id === collections.active ? 'true' : undefined}>
+                <span className={css.collectionName}>{collectionName(item.id)}</span>
+                <span className={css.collectionCount}>{item.modelCount === 1 ? t('collection.countOne') : t('collection.countMany', { count: item.modelCount })}</span>
+                {item.id === collections.active
+                  ? <Tag tone="neutral">{t('collections.active')}</Tag>
+                  : <Button variant="outline" size="sm" disabled={busy} onClick={() => { setCollection(item.id) }}>{t('collections.use')}</Button>}
+              </li>
+            ))}
+          </ul>
+          <form className={css.collectionCreate} onSubmit={(event) => {
+            event.preventDefault()
+            void createCollection(name).then((created) => { if (created) setName('') })
+          }}>
+            <input className={css.collectionInput} value={name} maxLength={64} placeholder={t('collection.namePlaceholder')}
+              aria-label={t('collection.namePlaceholder')} onChange={(event) => { setName(event.target.value) }} />
+            <Button type="submit" variant="outline" size="sm" disabled={busy || name.trim() === ''}>{t('collection.create')}</Button>
+          </form>
+          {loadFile !== undefined && (
+            <label className={css.copyToggle}>
+              <input type="checkbox" checked={page.copyIntoCollection} onChange={(event) => { setCopy(event.target.checked) }} />
+              <span>{t('copy.toggle')}</span>
+            </label>
+          )}
+        </div>
+      )}
       {page.unavailable && <p className={css.problem}>{t('unavailable')}</p>}
       {state?.kind === 'engine-unavailable' && <p className={css.problem}>{t('engineUnavailable', { reason: state.reason })}</p>}
       {state?.kind === 'failed' && <p className={css.problem}>{t('loadFailed', { model: state.modelId, reason: state.reason })}</p>}

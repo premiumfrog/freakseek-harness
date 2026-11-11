@@ -29,20 +29,26 @@ Mount it beside `@deepseek-ai/dsh-llm`. The [`dsh-offline`](../../bundle/offline
 - name: '@deepseek-ai/dsh-llm'
 - name: '@deepseek-ai/dsh-llm-local-gguf'
   config:
-    modelDirectories: ['~/models']
+    modelsRoot: '~/models'
     contextLength: 32768
 ```
 
-Put `.gguf` files in a model directory; the default is `$DSH_HOME/models`, and subdirectories are scanned two levels deep. Each supported file becomes a model whose id is its path relative to the directory without `.gguf`, for example `qwen/qwen2.5-7b-instruct-q4_k_m`. `listModels('local')` rescans the directories and inspects new or changed files; split-file shards after the first and multimodal projector files are skipped.
+Models live in **collections**: each immediate subfolder of the models root (`modelsRoot`, then `$DSH_LOCAL_MODELS_ROOT`, then `$DSH_HOME/models`) is one collection, and `.gguf` files directly in the root form the default collection, id `''`. The catalog lists the active collection's models; ids are paths relative to the root without `.gguf` (for example `coding/qwen2.5-7b-instruct-q4_k_m`), so a model resolves by id whichever collection is active, and a conversation started on another collection keeps working. A collection is scanned two levels deep; the default collection only one. The active collection is saved in `state.json` beside `importedModelsFile` and falls back to the default when its folder disappears. A nonempty `modelDirectories` list turns collections off: those directories are scanned two levels deep, and ids are relative to each directory. `listModels('local')` rescans the directories and inspects new or changed files; split-file shards after the first and multimodal projector files are skipped.
 
-The model id `default` selects the only supported model and fails with the list of ids when there are several. The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, `loadFile(path)`, and `unload()`; a successful `load` or `loadFile` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed. `loadFile` accepts an absolute path to a regular `.gguf` file anywhere on disk, appends it to `importedModelsFile`, and loads it; imported files join the catalog with the id `file:<absolute path without .gguf>` (forward slashes), so they never collide with directory ids, and a file a scanned directory already holds keeps its directory id.
+The model id `default` selects the only supported model and fails with the list of ids when there are several. The first request for a model loads it; a request for another model replaces it, because one engine process holds one model at a time. The `localModels` Remote offers `snapshot()`, `load(modelId)`, `loadFile(path)`, `importFile(path)`, `createCollection(name)`, `setActiveCollection(id)`, and `unload()`; a successful `load`, `loadFile`, or `importFile` also saves the model as the default for new conversations when `@deepseek-ai/dsh-agent-default-model` is composed. `loadFile` accepts an absolute path to a regular `.gguf` file anywhere on disk, appends it to `importedModelsFile`, and loads it; imported files join the catalog with the id `file:<absolute path without .gguf>` (forward slashes), so they never collide with directory ids, and a file a scanned directory already holds keeps its directory id; they are listed with the default collection. `importFile` instead copies the file into the active collection (under a temporary name, renamed when complete), reuses a copy with the same name, size, and first and last MiB, numbers the name of a different file, and loads the copy. `createCollection` accepts a portable folder name (1–64 characters, no `< > : " / \\ | ? *`, leading or trailing dot, or Windows device name) and makes it active; `setActiveCollection` switches the listing and keeps a loaded model loaded.
+
+### Engine selection
+
+`engineDirectory` (or `$DSH_GGUF_ENGINE_DIR`) names a folder with `cuda/dsh-gguf-engine` and `cpu/dsh-gguf-engine` builds, as the FreakSeek portable folder ships them. With `device: auto` the provider starts the CUDA build first and asks its `devices`; it falls back to the CPU build when the CUDA build cannot start (a PC without the NVIDIA driver), finds no GPU, or finds only GPUs below the kernels' minimum compute capability (7.5). `device: cpu` starts only the CPU build and `device: cuda` only the CUDA one. The snapshot's `engine` reports the executable, its accelerator, the CUDA devices, and why the CUDA build was passed over. `enginePath` or `$DSH_GGUF_ENGINE` starts that one executable and takes precedence.
 
 ### Configuration
 
 | Field | Default | Meaning |
 |---|---|---|
 | `enginePath` | resolved | Engine executable. When omitted: `$DSH_GGUF_ENGINE`, then `<resources>/gguf-engine/` inside the desktop app, then `native/gguf-engine/target/release/` in a source checkout |
-| `modelDirectories` | `$DSH_HOME/models` | Directories scanned for GGUF files; `~` expands to the home directory, and an empty list selects the default |
+| `engineDirectory` | `$DSH_GGUF_ENGINE_DIR` | Folder with `cuda/` and `cpu/` engine builds; see [Engine selection](#engine-selection) |
+| `modelsRoot` | `$DSH_LOCAL_MODELS_ROOT`, then `$DSH_HOME/models` | Root whose subfolders are collections |
+| `modelDirectories` | empty | Directories scanned for GGUF files instead of collections; `~` expands to the home directory |
 | `contextLength` | `32768` | Context window requested at load, clamped to the model's trained length; the agent's system prompt and tool declarations alone take roughly 10k tokens |
 | `cacheSlots` | `4` | KV caches kept at once; each conversation and each auxiliary request kind (such as session titles) uses its own, least recently used evicted first |
 | `device` | `auto` | `auto` uses CUDA device 0 when the engine was built with `--features cuda` and a device opens, else the CPU; `cpu`, `cuda`, and `cuda:<n>` force a device |

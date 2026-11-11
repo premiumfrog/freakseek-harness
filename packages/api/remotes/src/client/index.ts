@@ -163,7 +163,8 @@ export type {
 } from '@deepseek-ai/dsh-settings/types'
 // Local GGUF catalog and engine state for the localModels namespace.
 export type {
-  LocalModelEntry, LocalModelsActionResult, LocalModelsFileResult, LocalModelsSnapshot, LocalModelsState,
+  EngineDevice, LocalEngineInfo, LocalModelCollection, LocalModelCollections, LocalModelEntry, LocalModelsActionResult,
+  LocalModelsFileResult, LocalModelsSnapshot, LocalModelsState,
 } from '@deepseek-ai/dsh-llm-local-gguf/types'
 // Provider registry and discovery vocabulary for the llm namespace.
 export type {

@@ -23,6 +23,7 @@ A request line that is not valid JSON is answered with `id: null` and `BAD_REQUE
 | `op` | Fields | `value` on success | Ordering |
 |---|---|---|---|
 | `hello` | — | `{ protocol, version, cuda }`; `cuda` is whether the build can use CUDA devices | Answered immediately |
+| `devices` | — | `{ cuda, minComputeCapability, devices: [{ ordinal, name, computeCapability, totalBytes, freeBytes, supported }] }`; `minComputeCapability` is `major * 10 + minor` of the kernels (75 for release builds), and `supported` marks devices that meet it. A CPU build, or a driver with no device, reports an empty list | Answered immediately |
 | `inspect` | `path` | Header facts: `name`, `architecture`, `supported`, `unsupportedReason`, `contextLength`, `parameterCount`, `fileType`, `fileBytes`, `hasChatTemplate`, `templateTools`, `templateReasoning` | Answered immediately, even during a generation |
 | `load` | `path`, optional `contextLength`, optional `slots` (default 4), optional `device` (`auto` default, `cpu`, `cuda`, `cuda:<n>`), optional `gpuLayers` (trailing layers on the GPU; default all) | `{ facts, contextLength, vocab, device, gpuLayers }`; the window is clamped to 256 … the trained length; `device` is `cpu` or `cuda:<n>` and `gpuLayers` counts offloaded layers | Queued |
 | `unload` | — | `null` | Queued |
@@ -44,5 +45,5 @@ Closing stdin has the same effect as `shutdown`.
 | `UNSUPPORTED_MODEL` | The architecture is not implemented |
 | `CONTEXT_WINDOW_EXCEEDED` | The rendered prompt does not fit the loaded window |
 | `BAD_DEVICE` | `device` is not `auto`, `cpu`, `cuda`, or `cuda:<n>` |
-| `DEVICE_UNAVAILABLE` | `cuda` was requested from a build without CUDA, or the CUDA device could not be opened; `auto` falls back to the CPU instead |
+| `DEVICE_UNAVAILABLE` | `cuda` was requested from a build without CUDA, or the CUDA device could not be opened; `auto` falls back to the CPU instead, also for a GPU older than `minComputeCapability` |
 | `ENGINE_ERROR` | Any other failure, such as an unreadable file or a template error |

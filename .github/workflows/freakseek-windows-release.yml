@@ -1,7 +1,10 @@
-name: FreakSeek · Windows x64 CUDA release
+name: FreakSeek · Windows x64 portable release
 
-# Builds the CUDA GGUF engine, bundles the CUDA runtime DLLs it links beside it,
-# packages the unsigned desktop installer, and publishes it as a GitHub Release.
+# Builds the standalone FreakSeek folder: the Tauri shell, the bundled Node
+# agent runtime, a CPU engine and a CUDA engine (RTX 20-series and newer, with
+# the CUDA DLLs it imports), an empty models folder, and the CLI launchers.
+# Pre-build tests gate every other job; the engines and the app build in
+# parallel; the last job assembles, zips, and publishes the folder.
 
 on:
   workflow_dispatch:
@@ -9,32 +12,165 @@ on:
       tag:
         description: Release tag to create or update
         type: string
-        default: freakseek-v0.1.0
+        default: freakseek-v0.2.0
         required: true
       compute_cap:
-        description: CUDA compute capability the kernels target (86 = RTX 30-series; PTX also runs on newer GPUs)
+        description: Lowest CUDA compute capability the kernels target (75 = RTX 20-series; newer GPUs JIT the PTX)
         type: string
-        default: '86'
+        default: '75'
         required: true
+  push:
+    tags: ['freakseek-v*']
 
 permissions:
   contents: write
 
 concurrency:
-  group: freakseek-windows-release
+  group: freakseek-release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  CUDA_COMPUTE_CAP: ${{ inputs.compute_cap || '75' }}
+  DSH_TELEMETRY_DISABLED: '1'
+
 jobs:
-  package:
+  prebuild-tests:
+    name: Pre-build tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: engine-test-${{ runner.os }}-${{ hashFiles('native/gguf-engine/Cargo.lock') }}
+      - name: Engine tests
+        working-directory: native/gguf-engine
+        run: cargo test --release --locked
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: FreakSeek package tests
+        run: >-
+          pnpm exec vitest run
+          packages/llm/llm-local-gguf
+          packages/web/web-search-duckduckgo
+          packages/client/ui-settings-local-models
+          packages/client/ui-code-mode
+          packages/bundle
+          packages/util/official-bundles
+          apps/desktop-host
+          apps/cli/tests/freakseek.spec.ts
+          apps/cli/tests/resolved-profile-boot.spec.ts
+          apps/cli/tests/profile-mcp.spec.ts
+
+  engine-cpu:
+    name: CPU engine
+    needs: prebuild-tests
     runs-on: windows-2022
-    timeout-minutes: 180
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: native/gguf-engine
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: engine-cpu-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
+          restore-keys: engine-cpu-
+      - name: Build
+        working-directory: native/gguf-engine
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: engine-cpu
+          path: native/gguf-engine/target/release/dsh-gguf-engine.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  engine-cuda:
+    name: CUDA engine
+    needs: prebuild-tests
+    runs-on: windows-2022
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
-    env:
-      DSH_TELEMETRY_DISABLED: '1'
-      DSH_DESKTOP_UPDATE_CHANNEL: stable
-      CUDA_COMPUTE_CAP: ${{ inputs.compute_cap }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: native/gguf-engine
+      - name: Restore engine build cache
+        id: engine-cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: engine-cuda-${{ env.CUDA_COMPUTE_CAP }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
+          restore-keys: engine-cuda-${{ env.CUDA_COMPUTE_CAP }}-
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          cuda: '12.6.3'
+          method: network
+          use-github-cache: true
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "curand", "curand_dev", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+      - name: Build
+        working-directory: native/gguf-engine
+        run: |
+          cargo build --release --locked --features cuda
+          exit $LASTEXITCODE
+      - name: Save engine build cache
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: engine-cuda-${{ env.CUDA_COMPUTE_CAP }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
+      - name: Collect the engine and the CUDA DLLs it loads
+        run: |
+          $exe = 'native/gguf-engine/target/release/dsh-gguf-engine.exe'
+          $out = 'engine-cuda'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item $exe $out
+          $deps = dumpbin /dependents $exe | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^(cublas|cublasLt|curand|cudart|nvrtc)\S*\.dll$' }
+          if ($deps.Count -eq 0) { throw 'engine imports no CUDA runtime DLL; was it built with --features cuda?' }
+          $bin = Join-Path $env:CUDA_PATH 'bin'
+          foreach ($dll in $deps) { Copy-Item -LiteralPath (Join-Path $bin $dll) -Destination $out -ErrorAction Stop }
+          # Loaded at run time rather than through the import table: cuBLAS loads cuBLASLt; nvrtc loads its builtins.
+          if ($deps -match '^cublas64') { Get-ChildItem -Path $bin -Filter 'cublasLt64_*.dll' | Copy-Item -Destination $out }
+          if ($deps -match '^nvrtc') { Get-ChildItem -Path $bin -Filter 'nvrtc-builtins64_*.dll' | Copy-Item -Destination $out }
+          Get-ChildItem $out | Format-Table Name, Length
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: engine-cuda
+          path: engine-cuda
+          if-no-files-found: error
+          retention-days: 3
+
+  app:
+    name: Shell and agent runtime
+    needs: prebuild-tests
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -43,99 +179,79 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
-      - name: Install locked dependencies
-        run: |
+          cache: pnpm
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            apps/freakseek-shell/target
+          key: shell-${{ hashFiles('apps/freakseek-shell/Cargo.lock', 'apps/freakseek-shell/src/**') }}
+          restore-keys: shell-
+      - run: |
           pnpm install --frozen-lockfile
           exit $LASTEXITCODE
-      - name: Write local packaging settings
-        # Unsigned local build: production deployment metadata only; no update feed, policy, or signing is embedded.
+      - name: Build the agent runtime and client
         run: |
-          @(
-            'DSH_DESKTOP_APP_ID=com.freakseek.desktop'
-            'DSH_DESKTOP_AUTO_UPDATE_ENV=production'
-            'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://localhost'
-            'DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL=3'
-          ) | Set-Content -Encoding utf8 -Path apps/desktop/.env.windows
-      - name: Check packaging configuration
-        run: |
-          pnpm run package:desktop:win:x64 --check --unsigned
+          pnpm run build:artifacts
           exit $LASTEXITCODE
-      - name: Restore engine build cache
-        id: engine-cache
-        uses: actions/cache/restore@v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            native/gguf-engine/target
-          key: gguf-engine-cuda-${{ inputs.compute_cap }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
-      - name: Install CUDA Toolkit
-        id: cuda
-        uses: Jimver/cuda-toolkit@v0.2.24
-        with:
-          cuda: '12.6.3'
-          method: network
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "curand", "curand_dev", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
-      - name: Enter MSVC developer environment
-        uses: ilammy/msvc-dev-cmd@v1.13.0
-      - name: Build CUDA GGUF engine
+      - name: Build the shell
+        working-directory: apps/freakseek-shell
         run: |
-          nvcc --version
-          pnpm run build:gguf-engine:cuda
+          cargo build --release --locked
           exit $LASTEXITCODE
-      - name: Save engine build cache
-        # Saved immediately so a later packaging failure does not discard the CUDA compile.
-        if: steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            native/gguf-engine/target
-          key: gguf-engine-cuda-${{ inputs.compute_cap }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
-      - name: Collect the CUDA DLLs the engine imports
+      - name: Assemble the folder without engines
         run: |
-          $exe = 'native/gguf-engine/target/release/dsh-gguf-engine.exe'
-          $out = Join-Path $env:RUNNER_TEMP 'cuda-dlls'
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $deps = dumpbin /dependents $exe | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^(cublas|cublasLt|curand|cudart|nvrtc)\S*\.dll$' }
-          if ($deps.Count -eq 0) { throw 'engine imports no CUDA runtime DLL; was it built with --features cuda?' }
-          $bin = Join-Path $env:CUDA_PATH 'bin'
-          foreach ($dll in $deps) { Copy-Item -LiteralPath (Join-Path $bin $dll) -Destination $out -ErrorAction Stop }
-          # Libraries loaded at run time rather than through the engine's import table:
-          # cuBLAS loads cuBLASLt, and nvrtc loads its builtins.
-          if ($deps -match '^cublas64') { Get-ChildItem -Path $bin -Filter 'cublasLt64_*.dll' | Copy-Item -Destination $out }
-          if ($deps -match '^nvrtc') { Get-ChildItem -Path $bin -Filter 'nvrtc-builtins64_*.dll' | Copy-Item -Destination $out }
-          Get-ChildItem $out | Format-Table Name, Length
-          "DSH_GGUF_ENGINE_CUDA_DIR=$out" >> $env:GITHUB_ENV
-      - name: Package unsigned desktop installer
-        run: |
-          pnpm run package:desktop:win:x64:unsigned
+          pnpm run assemble:portable -- --platform win32 --node (Get-Command node).Source --shell apps/freakseek-shell/target/release/FreakSeek.exe --out out/FreakSeek
           exit $LASTEXITCODE
-      - name: Locate installer
-        id: installer
-        run: |
-          $root = 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts'
-          Get-ChildItem -Recurse $root | Format-Table FullName, Length
-          $exe = Get-ChildItem -Recurse -Path $root -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
-          if ($null -eq $exe) { throw 'no installer produced' }
-          $name = "FreakSeek-${{ inputs.tag }}-win-x64-cuda-setup.exe"
-          Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $env:RUNNER_TEMP $name)
-          "path=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_OUTPUT
+      - name: Archive
+        run: 7z a -mx=1 -bso0 app.7z ./out/FreakSeek
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: freakseek-win-x64-cuda
-          path: ${{ steps.installer.outputs.path }}
+          name: app
+          path: app.7z
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  package:
+    name: Assemble and publish
+    needs: [app, engine-cpu, engine-cuda]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v7.0.0
+        with:
+          path: artifacts
+      - name: Add engines and zip
+        run: |
+          set -euo pipefail
+          7z x -bso0 artifacts/app/app.7z
+          mkdir -p FreakSeek/engine/cpu FreakSeek/engine/cuda
+          cp artifacts/engine-cpu/dsh-gguf-engine.exe FreakSeek/engine/cpu/
+          cp artifacts/engine-cuda/* FreakSeek/engine/cuda/
+          name="FreakSeek-${RELEASE_TAG}-win-x64.zip"
+          7z a -tzip -mx=5 -bso0 "$name" FreakSeek
+          ls -la "$name"
+          echo "ZIP=$name" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: freakseek-win-x64
+          path: ${{ env.ZIP }}
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
-          name: FreakSeek ${{ inputs.tag }} (Windows x64, CUDA)
+          name: FreakSeek ${{ env.RELEASE_TAG }} (Windows x64, portable)
           prerelease: true
-          files: ${{ steps.installer.outputs.path }}
+          files: ${{ env.ZIP }}
           body: |
-            Unsigned Windows x64 desktop build with the CUDA GGUF engine (kernels for compute capability ${{ inputs.compute_cap }}).
-            Requires an NVIDIA driver supporting CUDA 12.6; the cuBLAS, cuRAND, and CUDA runtime DLLs are bundled.
-            Windows SmartScreen warns about unsigned installers: choose More info → Run anyway.
-            Put .gguf files in %USERPROFILE%\.dsh\models, then open Settings → Local models and select Load.
+            Portable Windows x64 build: unzip anywhere and run FreakSeek.exe. No installer; conversations and settings stay in the folder's data\ directory.
+
+            - Put .gguf models in models\<collection>\ (create collections from the app).
+            - CUDA engine for RTX 20-series and newer (compute capability ${{ env.CUDA_COMPUTE_CAP }}+); without an NVIDIA driver, FreakSeek uses the CPU engine automatically.
+            - CLI: freakseek.cmd "your task" from the folder.
+            - Unsigned: Windows SmartScreen may warn; choose More info → Run anyway.

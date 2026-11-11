@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreakSeek</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f7f9; --fg: #14182a; --muted: #5d6476; --accent: #ff5c35; --panel: #ffffff; --border: #dde1e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #14182a; --fg: #eef0f5; --muted: #9aa1b2; --panel: #1d2236; --border: #2c3350; } }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; place-items: center; }
+  main { width: min(640px, calc(100vw - 32px)); text-align: center; }
+  h1 { font-size: 22px; font-weight: 600; margin: 16px 0 4px; }
+  p { color: var(--muted); margin: 0; }
+  .spinner { width: 28px; height: 28px; margin: 0 auto; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #failure { display: none; text-align: left; }
+  #failure h1 { text-align: left; }
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <section id="starting">
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>Starting FreakSeek…</h1>
+    <p id="status">Launching the local runtime</p>
+  </section>
+  <section id="failure" role="alert">
+    <h1>FreakSeek could not start</h1>
+    <p id="failure-message"></p>
+    <pre id="failure-diagnostic"></pre>
+    <button id="copy" type="button">Copy diagnostics</button>
+  </section>
+</main>
+<script>
+  // The shell calls these through webview evaluation; this page has no network access.
+  window.freakseekStatus = (text) => { document.getElementById('status').textContent = text }
+  window.freakseekFatal = (message, diagnostic) => {
+    document.getElementById('starting').style.display = 'none'
+    document.getElementById('failure').style.display = 'block'
+    document.getElementById('failure-message').textContent = message
+    document.getElementById('failure-diagnostic').textContent = diagnostic || message
+  }
+  document.getElementById('copy').addEventListener('click', async () => {
+    const text = `${document.getElementById('failure-message').textContent}\n\n${document.getElementById('failure-diagnostic').textContent}`
+    try { await navigator.clipboard.writeText(text); document.getElementById('copy').textContent = 'Copied' }
+    catch (_clipboardUnavailable) {
+      const range = document.createRange()
+      range.selectNodeContents(document.getElementById('failure-diagnostic'))
+      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range)
+    }
+  })
+</script>
+</body>
+</html>

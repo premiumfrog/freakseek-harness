@@ -28,7 +28,7 @@ dsh cli --resume <session> "and now…"   # continue that Session
 dsh --profile cli --dump-config
 ```
 
-Put `.gguf` files in `$DSH_HOME/models`. In the desktop app, open **Settings → Local models** and select **Load**; loading a model makes it the default for new conversations. The CLI uses the only supported model in the folders; with several, `DSH_LOCAL_MODEL` names one by id, such as `qwen/qwen2.5-7b-instruct-q4_k_m`. `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces the scanned directories, `DSH_GGUF_ENGINE` names the engine executable, `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS` set the provider's `device` and `gpuLayers`, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
+Put `.gguf` files in `$DSH_HOME/models`. In the desktop app, open **Settings → Local models** and select **Load**; loading a model makes it the default for new conversations. The CLI uses the only supported model in the folders; with several, `DSH_LOCAL_MODEL` names one by id, such as `qwen/qwen2.5-7b-instruct-q4_k_m`. `DSH_LOCAL_MODELS_ROOT` sets the models root whose subfolders are collections, `DSH_LOCAL_MODEL_DIRS` (path-list separated) replaces collections with fixed directories, `DSH_GGUF_ENGINE_DIR` names a folder with `cuda/` and `cpu/` engine builds, `DSH_GGUF_ENGINE` names one engine executable, `DSH_GGUF_DEVICE` and `DSH_GGUF_GPU_LAYERS` set the provider's `device` and `gpuLayers`, and `DSH_LOCAL_MODEL` names the default model id before one is loaded.
 
 To remove the remaining model-initiated traffic as well, disable the web tool in the profile patch:
 

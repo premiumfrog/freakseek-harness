@@ -142,6 +142,8 @@ export interface LocalModelEntry {
   readonly quantization?: string
   readonly tools: boolean
   readonly reasoning: boolean
+  /** Collection holding the file (`''` for the models root); absent for imported files and explicit directories. */
+  readonly collection?: string
 }
 
 /** Engine and loaded-model state reported to configuration surfaces. */
@@ -152,14 +154,69 @@ export type LocalModelsState =
   | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number; readonly device: string; readonly gpuLayers: number }
   | { readonly kind: 'failed'; readonly modelId: string; readonly reason: string }
 
+/** One CUDA device as the engine's `devices` operation reports it. */
+export interface EngineDevice {
+  readonly ordinal: number
+  readonly name: string
+  /** `major.minor`, for example `8.6`. */
+  readonly computeCapability: string
+  readonly totalBytes: number
+  readonly freeBytes: number
+  /** The device meets the kernels' minimum compute capability. */
+  readonly supported: boolean
+}
+
+/** Result of the engine's `devices` operation. */
+export interface EngineDevices {
+  readonly cuda: boolean
+  /** Lowest supported compute capability as `major * 10 + minor`. */
+  readonly minComputeCapability: number
+  readonly devices: readonly EngineDevice[]
+}
+
+/** An engine executable the provider may start, with the accelerator its build targets. */
+export interface EngineCandidate {
+  readonly path: string
+  /** `cuda` and `cpu` builds come from an engine directory; `unknown` is a single configured or found executable. */
+  readonly accelerator: 'cuda' | 'cpu' | 'unknown'
+}
+
+/** The running engine: which executable, what it computes on, and why a CUDA engine was passed over. */
+export interface LocalEngineInfo {
+  readonly path: string
+  readonly accelerator: 'cuda' | 'cpu'
+  /** CUDA devices the engine reports; empty for the CPU. */
+  readonly devices: readonly EngineDevice[]
+  /** Why the CUDA engine is not in use, when an engine directory offered one. */
+  readonly fallbackReason?: string
+}
+
+/** One model collection: a folder under the models root, or the root itself (`id` `''`). */
+export interface LocalModelCollection {
+  readonly id: string
+  readonly modelCount: number
+}
+
+/** Collections under the models root and the active one. */
+export interface LocalModelCollections {
+  readonly root: string
+  readonly active: string
+  readonly items: readonly LocalModelCollection[]
+}
+
 /** Catalog snapshot returned to configuration surfaces. */
 export interface LocalModelsSnapshot {
   readonly state: LocalModelsState
   /** Model directories scanned, in configuration order. */
   readonly directories: readonly string[]
+  /** The active collection's models, or every configured directory's when collections are off. */
   readonly models: readonly LocalModelEntry[]
   /** Directories that could not be read, with the reason. */
   readonly problems: readonly { readonly directory: string; readonly reason: string }[]
+  /** The engine started for this provider; absent before the first start. */
+  readonly engine?: LocalEngineInfo
+  /** Model collections; absent when explicit `modelDirectories` configuration replaces them. */
+  readonly collections?: LocalModelCollections
 }
 
 /** Outcome of loading a GGUF file chosen on disk. */
