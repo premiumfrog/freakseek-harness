@@ -1,5 +1,7 @@
 # FreakSeek
 
+<img src="branding/icon-128.png" alt="FreakSeek logo" width="96" height="96">
+
 **FreakSeek** (Fast Rust Embodied AI Kernel) is a fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) that runs GGUF models entirely on your own computer. An embedded Rust inference engine loads the model, renders its chat template, and streams tokens to the agent; FreakSeek has two surfaces: the **desktop app**, where you pick, load, and chat with local models, and the **CLI**, which runs tasks on them from a terminal. Neither needs an account, an API key, or a network connection, and FreakSeek ships no browser UI.
 
 FreakSeek keeps the upstream **everything-is-a-plugin** architecture powered by [Cordis](https://github.com/cordiverse/cordis), so tools, skills, subagents, and the rest of the harness work unchanged on local models.
@@ -31,11 +33,32 @@ Follow-up turns reuse the KV cache, so only the new tokens are evaluated:
 
 ### Desktop app
 
-Install the desktop build, put `.gguf` files in `~/.dsh/models`, open **Settings → Local models**, and select **Load**. The loaded model becomes the default for new conversations, and the composer's model picker lists every supported file.
+Download the Windows x64 build from the [releases page](https://github.com/premiumfrog/freakseek-harness/releases) and unzip it anywhere, such as another drive or a USB stick. It is a standalone folder with nothing to install:
 
-Prebuilt Windows x64 installers with the CUDA engine are on the [releases page](https://github.com/premiumfrog/freakseek-harness/releases).
+```text
+FreakSeek\
+  FreakSeek.exe        the desktop app
+  freakseek.cmd        the command-line tool
+  models\              model collections: one subfolder per collection, shipped empty
+    <collection>\       .gguf files for that collection
+  data\                conversations, settings, and the model list, created on first launch
+  runtime\             the bundled agent runtime and inference engines
+  README-FIRST.txt
+```
+
+Put `.gguf` files in a collection folder under `models\`, start `FreakSeek.exe`, and pick a model from the composer's model control or **Settings → Local models**. Everything FreakSeek writes stays inside the folder, so moving or copying the folder moves your data with it.
 
 ### CLI
+
+From the portable folder, `freakseek.cmd` runs one task on a local model in the current directory:
+
+```bat
+freakseek "explain what this repository does"
+freakseek --session-id <id> "now add tests"
+freakseek --help
+```
+
+### CLI from source
 
 Install Node.js 24.9 or later, pnpm, and stable Rust, then run:
 
@@ -45,10 +68,10 @@ cd freakseek-harness
 pnpm install
 pnpm run build
 pnpm run build:gguf-engine   # CPU engine; see GPU acceleration below
-pnpm dsh cli "explain what this repository does"
+pnpm freakseek "explain what this repository does"
 ```
 
-`dsh cli` answers one task on a local model in the current directory, prints the result, and exits; `--session-id <id>` continues a Session and `--json` prints machine-readable output. It uses the only model in the model folder; with several, name one in `DSH_LOCAL_MODEL` (the file's path under the folder without `.gguf`, such as `qwen/qwen2.5-7b-instruct-q4_k_m`). `DSH_LOCAL_MODEL_DIRS` replaces the scanned model folders, and `DSH_GGUF_ENGINE` names a specific engine executable.
+`freakseek` (and its equivalent `dsh cli`) answers one task on a local model in the current directory, prints the result, and exits; `--session-id <id>` continues a Session and `--json` prints machine-readable output. It uses the only model in the model folder; with several, name one in `DSH_LOCAL_MODEL` (the file's path under the folder without `.gguf`, such as `qwen/qwen2.5-7b-instruct-q4_k_m`). `DSH_LOCAL_MODEL_DIRS` replaces the scanned model folders, and `DSH_GGUF_ENGINE` names a specific engine executable.
 
 ### Desktop app from source
 
@@ -58,7 +81,9 @@ pnpm run dev:desktop
 
 ## GPU acceleration (CUDA)
 
-Build the engine with CUDA kernels:
+The release folder ships two engines: a CUDA engine for NVIDIA GPUs from the RTX 20-series (Turing) onward, including RTX 30, 40, and 50-series and the matching workstation cards, and a CPU engine. FreakSeek uses the CUDA engine when an NVIDIA driver is present and falls back to the CPU engine otherwise; newer GPUs compile the kernels once on first launch, then reuse the driver's cache.
+
+To build the CUDA engine yourself:
 
 ```sh
 pnpm run build:gguf-engine:cuda   # cargo build --release --features cuda

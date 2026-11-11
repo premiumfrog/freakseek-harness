@@ -1,4 +1,4 @@
-/** Official DeepSeek Harness occupants: the profile-gated sidebar brand slots and the home whale frame layer. */
+/** Official FreakSeek occupants: the profile-gated sidebar brand slots and the home whale frame layer. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'

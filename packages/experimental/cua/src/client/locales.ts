@@ -4,7 +4,7 @@ export const NS = 'cuaPermissions'
 export const en = {
   approvalRisks: 'Risks',
   approvalRiskTitle: 'Computer use risks',
-  approvalRiskNotice: 'The agent can access only apps you approve, and can read and control them in the background.\n\nOnline games, messaging apps, and other apps may restrict automation. Violating their rules could result in your account with that app being suspended or banned.\n\nProceed at your own risk. To stop automated control at any time, press Stop in DeepSeek Harness.',
+  approvalRiskNotice: 'The agent can access only apps you approve, and can read and control them in the background.\n\nOnline games, messaging apps, and other apps may restrict automation. Violating their rules could result in your account with that app being suspended or banned.\n\nProceed at your own risk. To stop automated control at any time, press Stop in FreakSeek.',
   title: 'Authorize computer use',
   applicationsTitle: 'Manage applications computer use can access',
   setupTitle: 'Set up computer use before use',
@@ -45,7 +45,7 @@ export type CuaPermissionLocaleKey = keyof typeof en
 export const zh: Record<CuaPermissionLocaleKey, string> = {
   approvalRisks: '风险提示',
   approvalRiskTitle: 'Computer Use 风险提示',
-  approvalRiskNotice: '智能体只能访问你已授权的应用，并可在后台读取应用内容、操作应用。\n\n网络游戏、即时通讯等应用可能对自动化操作有所限制。违反相关规则可能导致你在该应用中的账号被暂停使用或封禁。\n\n请自行承担使用风险。如需停止自动化操作，可随时点击 DeepSeek Harness 中的停止按钮。',
+  approvalRiskNotice: '智能体只能访问你已授权的应用，并可在后台读取应用内容、操作应用。\n\n网络游戏、即时通讯等应用可能对自动化操作有所限制。违反相关规则可能导致你在该应用中的账号被暂停使用或封禁。\n\n请自行承担使用风险。如需停止自动化操作，可随时点击 FreakSeek 中的停止按钮。',
   title: '给 Computer Use 授权', applicationsTitle: '管理 Computer Use 可访问的应用', setupTitle: '使用 Computer Use 前需要设置',
   setupBody: 'Computer Use 插件已开启。使用前请切换到 PTC 模式，并授予辅助功能和屏幕录制权限。请前往插件详情页完成设置。',
   setupQueryFailed: 'Computer Use 插件已开启，但暂时无法检测系统权限。请前往插件详情页查看原因并重试。',
@@ -83,7 +83,7 @@ export const zh: Record<CuaPermissionLocaleKey, string> = {
 export const ja = {
   approvalRisks: 'リスク',
   approvalRiskTitle: 'コンピュータ操作のリスク',
-  approvalRiskNotice: 'エージェントがアクセスできるのは、あなたが許可したアプリだけです。許可したアプリの内容を読み取ったり、バックグラウンドで操作したりできます。\n\nオンラインゲームやメッセージアプリなどでは、自動操作が制限されている場合があります。規約に違反すると、そのアプリのアカウントが一時停止または永久停止になる可能性があります。\n\n自己責任でご利用ください。自動操作は、DeepSeek Harness の停止ボタンでいつでも止められます。',
+  approvalRiskNotice: 'エージェントがアクセスできるのは、あなたが許可したアプリだけです。許可したアプリの内容を読み取ったり、バックグラウンドで操作したりできます。\n\nオンラインゲームやメッセージアプリなどでは、自動操作が制限されている場合があります。規約に違反すると、そのアプリのアカウントが一時停止または永久停止になる可能性があります。\n\n自己責任でご利用ください。自動操作は、FreakSeek の停止ボタンでいつでも止められます。',
   'title': 'コンピュータ操作を承認',
   'applicationsTitle': 'Computer Useがアクセスできるアプリを管理',
   'setupTitle': '使用前にComputer Useを設定',
@@ -139,7 +139,7 @@ export const ja = {
 export const es = {
   approvalRisks: 'Riesgos',
   approvalRiskTitle: 'Riesgos del control del equipo',
-  approvalRiskNotice: 'El agente solo puede acceder a las aplicaciones que autorices, y puede leer su contenido y controlarlas en segundo plano.\n\nLos juegos en línea, las aplicaciones de mensajería y otras aplicaciones pueden restringir la automatización. Incumplir sus normas podría provocar la suspensión o el bloqueo permanente de tu cuenta en esa aplicación.\n\nContinúa bajo tu propia responsabilidad. Para detener el control automatizado en cualquier momento, pulsa Detener en DeepSeek Harness.',
+  approvalRiskNotice: 'El agente solo puede acceder a las aplicaciones que autorices, y puede leer su contenido y controlarlas en segundo plano.\n\nLos juegos en línea, las aplicaciones de mensajería y otras aplicaciones pueden restringir la automatización. Incumplir sus normas podría provocar la suspensión o el bloqueo permanente de tu cuenta en esa aplicación.\n\nContinúa bajo tu propia responsabilidad. Para detener el control automatizado en cualquier momento, pulsa Detener en FreakSeek.',
   title: 'Autorizar el uso de la computadora',
   applicationsTitle: 'Administrar aplicaciones a las que puede acceder el uso de la computadora',
   setupTitle: 'Configurar el uso de la computadora antes de usarla',
@@ -179,7 +179,7 @@ export const es = {
 export const fr = {
   approvalRisks: 'Risques',
   approvalRiskTitle: 'Risques du contrôle de l’ordinateur',
-  approvalRiskNotice: 'L’agent ne peut accéder qu’aux applications que vous autorisez. Il peut en lire le contenu et les contrôler en arrière-plan.\n\nLes jeux en ligne, les messageries et d’autres applications peuvent limiter l’automatisation. Le non-respect de leurs règles pourrait entraîner la suspension ou le bannissement de votre compte dans l’application concernée.\n\nUtilisez cette fonction à vos risques et périls. Vous pouvez interrompre le contrôle automatisé à tout moment en cliquant sur Arrêter dans DeepSeek Harness.',
+  approvalRiskNotice: 'L’agent ne peut accéder qu’aux applications que vous autorisez. Il peut en lire le contenu et les contrôler en arrière-plan.\n\nLes jeux en ligne, les messageries et d’autres applications peuvent limiter l’automatisation. Le non-respect de leurs règles pourrait entraîner la suspension ou le bannissement de votre compte dans l’application concernée.\n\nUtilisez cette fonction à vos risques et périls. Vous pouvez interrompre le contrôle automatisé à tout moment en cliquant sur Arrêter dans FreakSeek.',
   title: "Autoriser l'utilisation de l'ordinateur",
   applicationsTitle: "Gérer les applications auxquelles l'ordinateur peut accéder",
   setupTitle: "Configurer l'utilisation de l'ordinateur avant utilisation",
@@ -219,7 +219,7 @@ export const fr = {
 export const de = {
   approvalRisks: 'Risiken',
   approvalRiskTitle: 'Risiken der Computersteuerung',
-  approvalRiskNotice: 'Der Agent kann nur auf Apps zugreifen, die Sie freigeben. Er kann deren Inhalte lesen und die Apps im Hintergrund steuern.\n\nOnline-Spiele, Messenger und andere Apps können die Automatisierung einschränken. Bei Verstößen gegen ihre Regeln könnte Ihr Konto bei der jeweiligen App vorübergehend oder dauerhaft gesperrt werden.\n\nDie Nutzung erfolgt auf eigenes Risiko. Über Stopp in DeepSeek Harness können Sie die automatisierte Steuerung jederzeit beenden.',
+  approvalRiskNotice: 'Der Agent kann nur auf Apps zugreifen, die Sie freigeben. Er kann deren Inhalte lesen und die Apps im Hintergrund steuern.\n\nOnline-Spiele, Messenger und andere Apps können die Automatisierung einschränken. Bei Verstößen gegen ihre Regeln könnte Ihr Konto bei der jeweiligen App vorübergehend oder dauerhaft gesperrt werden.\n\nDie Nutzung erfolgt auf eigenes Risiko. Über Stopp in FreakSeek können Sie die automatisierte Steuerung jederzeit beenden.',
   title: 'Autorisieren Sie die Computernutzung',
   applicationsTitle: 'Verwalten Sie Anwendungen, auf die der Computer zugreifen kann',
   setupTitle: 'Richten Sie die Computernutzung vor der Nutzung ein',
@@ -259,7 +259,7 @@ export const de = {
 export const ru = {
   approvalRisks: 'Риски',
   approvalRiskTitle: 'Риски управления компьютером',
-  approvalRiskNotice: 'Агент получает доступ только к приложениям, которые вы разрешили, и может читать их содержимое и управлять ими в фоновом режиме.\n\nВ онлайн-играх, мессенджерах и других приложениях могут действовать ограничения на автоматизацию. Нарушение их правил может привести к временной или постоянной блокировке вашей учётной записи в соответствующем приложении.\n\nВы пользуетесь этой возможностью на свой страх и риск. Чтобы в любой момент остановить автоматизированное управление, нажмите «Остановить» в DeepSeek Harness.',
+  approvalRiskNotice: 'Агент получает доступ только к приложениям, которые вы разрешили, и может читать их содержимое и управлять ими в фоновом режиме.\n\nВ онлайн-играх, мессенджерах и других приложениях могут действовать ограничения на автоматизацию. Нарушение их правил может привести к временной или постоянной блокировке вашей учётной записи в соответствующем приложении.\n\nВы пользуетесь этой возможностью на свой страх и риск. Чтобы в любой момент остановить автоматизированное управление, нажмите «Остановить» в FreakSeek.',
   title: 'Разрешить использование компьютера',
   applicationsTitle: 'Управление приложениями, к которым может иметь доступ компьютер',
   setupTitle: 'Настройте использование компьютера перед использованием',
@@ -299,7 +299,7 @@ export const ru = {
 export const pt = {
   approvalRisks: 'Riscos',
   approvalRiskTitle: 'Riscos do controle do computador',
-  approvalRiskNotice: 'O agente só pode acessar os aplicativos que você autorizar e pode ler seu conteúdo e controlá-los em segundo plano.\n\nJogos on-line, aplicativos de mensagens e outros aplicativos podem restringir a automação. Violar essas regras pode levar à suspensão ou ao banimento da sua conta no aplicativo em questão.\n\nUse por sua conta e risco. Para interromper o controle automatizado a qualquer momento, clique em Parar no DeepSeek Harness.',
+  approvalRiskNotice: 'O agente só pode acessar os aplicativos que você autorizar e pode ler seu conteúdo e controlá-los em segundo plano.\n\nJogos on-line, aplicativos de mensagens e outros aplicativos podem restringir a automação. Violar essas regras pode levar à suspensão ou ao banimento da sua conta no aplicativo em questão.\n\nUse por sua conta e risco. Para interromper o controle automatizado a qualquer momento, clique em Parar no FreakSeek.',
   title: 'Autorizar o uso do computador',
   applicationsTitle: 'Gerenciar aplicativos que o computador pode acessar',
   setupTitle: 'Configure o uso do computador antes de usar',

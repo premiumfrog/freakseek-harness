@@ -12,7 +12,8 @@
   },
   "type": "module",
   "bin": {
-    "dsh": "lib/bin.js"
+    "dsh": "lib/bin.js",
+    "freakseek": "lib/freakseek.js"
   },
   "files": [
     "lib/*.js",

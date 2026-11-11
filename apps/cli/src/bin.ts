@@ -21,12 +21,13 @@ export type RunCliOptions = Pick<RunProfileOptions, 'packageManager'> & {
 /**
  * Run the public dsh command-line interface.
  * @param options - Package runtime and Desktop profile access supplied by the installation.
+ * @param argv - launcher arguments; the process arguments after the script by default.
  * @returns a promise that settles when the selected command mode finishes.
  */
-export async function runCli(options: RunCliOptions = {}): Promise<void> {
+export async function runCli(options: RunCliOptions = {}, argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const version = getDshRuntimeVersion()
   const { manageDesktopProfile, ...profileOptions } = options
-  const invocation = parseDshArgs(process.argv.slice(2), version, manageDesktopProfile)
+  const invocation = parseDshArgs(argv, version, manageDesktopProfile)
 
   switch (invocation.mode) {
     case 'profile': {

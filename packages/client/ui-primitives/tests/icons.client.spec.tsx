@@ -277,6 +277,20 @@ describe('FishLogo', () => {
   })
 })
 
+describe('FreakSeekLogo', () => {
+  it('renders the mark as one even-odd path in currentColor at the requested square size', () => {
+    const { container } = render(<primitives.FreakSeekLogo size={34} />)
+    const svg = container.querySelector('svg')!
+    expect([svg.getAttribute('width'), svg.getAttribute('height'), svg.getAttribute('viewBox')]).toEqual(['34', '34', '0 0 24 24'])
+    const path = container.querySelector('path')!
+    expect([path.getAttribute('fill'), path.getAttribute('fill-rule'), path.getAttribute('d')]).toEqual(['currentColor', 'evenodd', primitives.FREAKSEEK_LOGO_PATH])
+  })
+
+  it('names the product in the wordmark', () => {
+    expect(render(<primitives.FreakSeekWordmark />).container.textContent).toBe('FreakSeek')
+  })
+})
+
 describe('BrandWordmark', () => {
   it('can render the name artwork with or without its leading mark', () => {
     const view = render(<primitives.BrandWordmark />)
