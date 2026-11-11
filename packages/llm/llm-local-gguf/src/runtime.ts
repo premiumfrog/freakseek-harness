@@ -8,12 +8,19 @@
  * @module dsh-llm-local-gguf/runtime
  */
 
-import { readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative, sep } from 'node:path'
+import {
+  collectionIds, copyIntoCollection, DEFAULT_COLLECTION_ID, readActiveCollection, validateCollectionName, writeActiveCollection,
+} from './collections.ts'
+import type { ModelSource } from './config.ts'
 import { EngineError, EngineProcess } from './engine-process.ts'
 import { addImport, importedModelId, readImports, validateModelFile } from './imports.ts'
 import type { GenerateHandlers } from './engine-process.ts'
-import type { EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, LocalModelEntry, LocalModelsSnapshot, LocalModelsState } from './types.ts'
+import type {
+  EngineCandidate, EngineDevices, EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, LocalEngineInfo,
+  LocalModelCollections, LocalModelEntry, LocalModelsSnapshot, LocalModelsState,
+} from './types.ts'
 
 /** `general.file_type` codes (llama.cpp `llama_ftype`) to display names. */
 const FILE_TYPES: Readonly<Record<number, string>> = {
@@ -26,15 +33,18 @@ const NOT_A_MODEL = /(?:-0000[2-9]|-000[1-9]\d)-of-\d{5}\.gguf$|mmproj/iu
 
 /** Runtime inputs read at each operation, so settings changes apply without a restart. */
 export interface RuntimeSettings {
-  /** Engine executable, or the reason none is available. */
-  engine(): { readonly path: string } | { readonly reason: string }
+  /** Engine executables to try in order, or the reason none is available. */
+  engine(): { readonly candidates: readonly EngineCandidate[] } | { readonly reason: string }
   threads(): number | undefined
-  directories(): readonly string[]
+  /** Collections under a models root, or explicitly configured directories. */
+  source(): ModelSource
   contextLength(): number
   /** KV cache slots kept per loaded model. */
   cacheSlots(): number
   /** JSON file listing GGUF files loaded from outside the model directories. */
   importsFile(): string
+  /** JSON file holding the active collection. */
+  stateFile(): string
   /** Compute device and GPU layer count requested at load. */
   placement(): EnginePlacement
   shutdownGraceMillis(): number
@@ -60,7 +70,14 @@ export class LocalModelRuntime {
   private process: EngineProcess | undefined
   private queue: Promise<unknown> = Promise.resolve()
   private readonly facts = new Map<string, CachedFacts>()
+  /** Every scanned model, across all collections, for id lookup. */
+  private all: LocalModelEntry[] = []
+  /** The listed catalog: the active collection's models. */
   private entries: LocalModelEntry[] = []
+  private collections: LocalModelCollections | undefined
+  /** Active collection id once read from the state file. */
+  private active: string | undefined
+  private engineInfo: LocalEngineInfo | undefined
   private problems: { directory: string; reason: string }[] = []
   private loaded: { readonly modelId: string; readonly path: string; readonly contextLength: number } | undefined
   private state: LocalModelsState = { kind: 'idle' }
@@ -98,9 +115,53 @@ export class LocalModelRuntime {
 
   private async spawn(): Promise<EngineProcess> {
     const resolved = this.settings.engine()
-    if (!('path' in resolved)) throw new EngineError('ENGINE_UNAVAILABLE', resolved.reason)
+    if (!('candidates' in resolved)) throw new EngineError('ENGINE_UNAVAILABLE', resolved.reason)
+    const device = this.settings.placement().device
+    const usable = resolved.candidates.filter(candidate => device === 'cpu'
+      ? candidate.accelerator !== 'cuda'
+      : device === 'auto' || candidate.accelerator !== 'cpu')
+    if (usable.length === 0) throw new EngineError('ENGINE_UNAVAILABLE', `no local model engine for device ${device}`)
     const threads = this.settings.threads()
-    const proc = new EngineProcess({ executable: resolved.path, ...threads === undefined ? {} : { threads } })
+    let fallbackReason: string | undefined
+    for (const [index, candidate] of usable.entries()) {
+      const another = index < usable.length - 1
+      const proc = new EngineProcess({ executable: candidate.path, ...threads === undefined ? {} : { threads } })
+      let devices: EngineDevices
+      try {
+        await proc.handshake()
+        devices = await engineDevices(proc)
+      } catch (error) {
+        await proc.close(0)
+        // A CUDA build without an NVIDIA driver cannot start at all; the CPU build is the fallback.
+        if (candidate.accelerator === 'cuda' && another) {
+          fallbackReason = `the CUDA engine did not start: ${(error as Error).message}`
+          continue
+        }
+        throw error
+      }
+      const gpu = devices.cuda && device !== 'cpu' && devices.devices.some(d => d.supported)
+      if (candidate.accelerator === 'cuda' && device === 'auto' && !gpu && another) {
+        await proc.close(0)
+        fallbackReason = devices.devices.length === 0
+          ? 'no NVIDIA GPU was found'
+          : `${devices.devices.map(d => `${d.name} (compute ${d.computeCapability})`).join(', ')} is older than compute capability ${(devices.minComputeCapability / 10).toFixed(1)}`
+        continue
+      }
+      this.adopt(proc)
+      this.engineInfo = {
+        path: candidate.path,
+        accelerator: gpu ? 'cuda' : 'cpu',
+        devices: devices.devices,
+        ...fallbackReason === undefined ? {} : { fallbackReason },
+      }
+      // Engines start inside a refresh or a load, whose own change notice carries this to listeners.
+      return proc
+    }
+    throw new EngineError('ENGINE_UNAVAILABLE', fallbackReason ?? 'no local model engine started')
+  }
+
+  /** Make `proc` the running engine and clear model state when it exits. */
+  private adopt(proc: EngineProcess): void {
     this.process = proc
     this.loaded = undefined
     void proc.exit.then(() => {
@@ -108,12 +169,6 @@ export class LocalModelRuntime {
       this.loaded = undefined
       if (this.state.kind === 'loaded' || this.state.kind === 'loading') this.setState({ kind: 'idle' })
     })
-    try { await proc.handshake() }
-    catch (error) {
-      await proc.close(0)
-      throw error
-    }
-    return proc
   }
 
   /**
@@ -123,7 +178,22 @@ export class LocalModelRuntime {
   snapshot(): LocalModelsSnapshot {
     const engine = this.settings.engine()
     const state: LocalModelsState = 'reason' in engine ? { kind: 'engine-unavailable', reason: engine.reason } : this.state
-    return { state, directories: this.settings.directories(), models: this.entries, problems: this.problems }
+    return {
+      state,
+      directories: this.directories(),
+      models: this.entries,
+      problems: this.problems,
+      ...this.engineInfo === undefined ? {} : { engine: this.engineInfo },
+      ...this.collections === undefined ? {} : { collections: this.collections },
+    }
+  }
+
+  /** Directories the listed catalog comes from. */
+  private directories(): readonly string[] {
+    const source = this.settings.source()
+    if (source.kind === 'directories') return source.directories
+    const active = this.active ?? DEFAULT_COLLECTION_ID
+    return [active === DEFAULT_COLLECTION_ID ? source.root : join(source.root, active)]
   }
 
   /** Last scanned catalog. */
@@ -150,15 +220,35 @@ export class LocalModelRuntime {
   async refresh(): Promise<readonly LocalModelEntry[]> {
     const entries: LocalModelEntry[] = []
     const problems: { directory: string; reason: string }[] = []
-    const files: { directory: string; path: string; imported?: true }[] = []
-    for (const directory of this.settings.directories()) {
+    const files: { directory: string; path: string; imported?: true; collection?: string; idRoot?: string }[] = []
+    const scan = async (directory: string, depth: number, extra: { collection?: string; idRoot?: string }) => {
       try {
-        for (const path of await ggufFiles(directory, 2)) files.push({ directory, path })
+        for (const path of await ggufFiles(directory, depth)) files.push({ directory, path, ...extra })
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code
         // A default directory that does not exist yet simply holds no models.
         if (code !== 'ENOENT') problems.push({ directory, reason: (error as Error).message })
       }
+    }
+    const source = this.settings.source()
+    let ids: string[] = []
+    if (source.kind === 'directories') {
+      for (const directory of source.directories) await scan(directory, 2, {})
+    } else {
+      try { ids = await collectionIds(source.root) }
+      catch (error) { problems.push({ directory: source.root, reason: (error as Error).message }) }
+      if (this.active === undefined) {
+        try { this.active = await readActiveCollection(this.settings.stateFile()) }
+        catch (error) {
+          problems.push({ directory: this.settings.stateFile(), reason: (error as Error).message })
+          this.active = DEFAULT_COLLECTION_ID
+        }
+      }
+      // A saved collection whose folder was removed falls back to the root.
+      if (this.active !== DEFAULT_COLLECTION_ID && !ids.includes(this.active)) this.active = DEFAULT_COLLECTION_ID
+      // Ids are paths under the root, so a conversation's model resolves whichever collection is active.
+      await scan(source.root, 0, { collection: DEFAULT_COLLECTION_ID, idRoot: source.root })
+      for (const id of ids) await scan(join(source.root, id), 2, { collection: id, idRoot: source.root })
     }
     const importsFile = this.settings.importsFile()
     try {
@@ -175,15 +265,16 @@ export class LocalModelRuntime {
     } catch (error) {
       problems.push({ directory: importsFile, reason: (error as Error).message })
     }
-    for (const { directory, path, imported } of files) {
+    for (const { directory, path, imported, collection, idRoot } of files) {
       const facts = await this.inspect(path)
-      const id = imported === true ? importedModelId(path) : relative(directory, path).split(sep).join('/').replace(/\.gguf$/iu, '')
+      const id = imported === true ? importedModelId(path) : relative(idRoot ?? directory, path).split(sep).join('/').replace(/\.gguf$/iu, '')
+      const member = collection === undefined ? {} : { collection }
       if (entries.some(e => e.id === id)) continue
       if ('error' in facts) {
         const size = this.facts.get(path)?.size ?? 0
         entries.push({
           id, name: basename(path, '.gguf'), path, directory, fileBytes: size, architecture: 'unknown', supported: false,
-          unsupportedReason: facts.error, parameterCount: 0, tools: false, reasoning: false,
+          unsupportedReason: facts.error, parameterCount: 0, tools: false, reasoning: false, ...member,
         })
         continue
       }
@@ -202,14 +293,79 @@ export class LocalModelRuntime {
         ...quantization === undefined ? {} : { quantization },
         tools: facts.templateTools,
         reasoning: facts.templateReasoning,
+        ...member,
       })
     }
+    const active = this.active ?? DEFAULT_COLLECTION_ID
+    // Imported files belong to no folder and are listed with the root's own models.
+    const listed = source.kind === 'directories'
+      ? entries
+      : entries.filter(e => (e.collection ?? DEFAULT_COLLECTION_ID) === active)
+    const collections: LocalModelCollections | undefined = source.kind === 'directories' ? undefined : {
+      root: source.root,
+      active,
+      items: [DEFAULT_COLLECTION_ID, ...ids].map(id => ({
+        id, modelCount: entries.filter(e => (e.collection ?? DEFAULT_COLLECTION_ID) === id).length,
+      })),
+    }
     // Announce only real catalog changes: listeners re-read the catalog, which rescans again.
-    const changed = JSON.stringify([entries, problems]) !== JSON.stringify([this.entries, this.problems])
-    this.entries = entries
+    const changed = JSON.stringify([listed, problems, collections]) !== JSON.stringify([this.entries, this.problems, this.collections])
+    this.all = entries
+    this.entries = listed
     this.problems = problems
+    this.collections = collections
     if (changed) this.onChange()
-    return entries
+    return listed
+  }
+
+  /**
+   * Create a collection folder under the models root and make it active.
+   * @param name - folder name received from a configuration surface.
+   * @returns the collection id.
+   * @throws EngineError `INVALID_COLLECTION` for an invalid name or when explicit directories replace collections.
+   */
+  async createCollection(name: unknown): Promise<string> {
+    const source = this.settings.source()
+    if (source.kind !== 'collections') throw new EngineError('INVALID_COLLECTION', 'collections are off while modelDirectories is configured')
+    const id = validateCollectionName(name)
+    await mkdir(join(source.root, id), { recursive: true })
+    await this.setActiveCollection(id)
+    return id
+  }
+
+  /**
+   * Make a collection active, so the catalog lists its models. A loaded model stays loaded.
+   * @param id - collection id; `''` selects the models root.
+   * @throws EngineError `INVALID_COLLECTION` for an id the models root does not hold.
+   */
+  async setActiveCollection(id: unknown): Promise<void> {
+    const source = this.settings.source()
+    if (source.kind !== 'collections') throw new EngineError('INVALID_COLLECTION', 'collections are off while modelDirectories is configured')
+    if (typeof id !== 'string' || (id !== DEFAULT_COLLECTION_ID && !(await collectionIds(source.root)).includes(id))) {
+      throw new EngineError('INVALID_COLLECTION', `no collection ${JSON.stringify(id)} in ${source.root}`)
+    }
+    const saved = this.importing.then(() => writeActiveCollection(this.settings.stateFile(), id))
+    this.importing = saved.catch((_reportedToCaller: unknown) => {})
+    await saved
+    this.active = id
+    await this.refresh()
+  }
+
+  /**
+   * Copy a GGUF file into the active collection (or the first configured directory) and load the copy.
+   * @param path - absolute `.gguf` path received from a configuration surface.
+   * @returns the copy's catalog id.
+   * @throws EngineError `INVALID_MODEL_FILE`, `IMPORT_FAILED`, or any load failure.
+   */
+  async importFile(path: unknown): Promise<string> {
+    const file = await validateModelFile(path)
+    const [target] = this.directories()
+    if (target === undefined) throw new EngineError('IMPORT_FAILED', 'no model folder to copy into')
+    const copy = await copyIntoCollection(file, target)
+    const entry = (await this.refresh()).find(e => e.path === copy)
+    if (entry === undefined) throw new EngineError('INVALID_MODEL_FILE', `${copy} did not enter the local model catalog`)
+    await this.load(entry.id)
+    return entry.id
   }
 
   private async inspect(path: string): Promise<EngineModelFacts | { readonly error: string }> {
@@ -237,7 +393,8 @@ export class LocalModelRuntime {
     const added = this.importing.then(() => addImport(this.settings.importsFile(), file))
     this.importing = added.catch((_reportedToCaller: unknown) => {})
     await added
-    const entry = (await this.refresh()).find(e => e.path === file)
+    await this.refresh()
+    const entry = this.all.find(e => e.path === file)
     if (entry === undefined) throw new EngineError('INVALID_MODEL_FILE', `${file} did not enter the local model catalog`)
     await this.load(entry.id)
     return entry.id
@@ -254,7 +411,7 @@ export class LocalModelRuntime {
 
   /** Catalog entry for an id; {@link DEFAULT_MODEL_ID} names the only supported model. */
   private find(modelId: string): LocalModelEntry | undefined {
-    if (modelId !== DEFAULT_MODEL_ID) return this.entries.find(e => e.id === modelId)
+    if (modelId !== DEFAULT_MODEL_ID) return this.all.find(e => e.id === modelId)
     const supported = this.entries.filter(e => e.supported)
     return supported.length === 1 ? supported[0] : undefined
   }
@@ -268,10 +425,10 @@ export class LocalModelRuntime {
     if (entry === undefined && modelId === DEFAULT_MODEL_ID) {
       const ids = this.entries.filter(e => e.supported).map(e => e.id)
       throw new EngineError('UNKNOWN_MODEL', ids.length === 0
-        ? `no supported local model in ${this.settings.directories().join(', ')}`
+        ? `no supported local model in ${this.directories().join(', ')}`
         : `several local models are available; choose one (for example with DSH_LOCAL_MODEL): ${ids.join(', ')}`)
     }
-    if (entry === undefined) throw new EngineError('UNKNOWN_MODEL', `no local model "${modelId}" in ${this.settings.directories().join(', ')}`)
+    if (entry === undefined) throw new EngineError('UNKNOWN_MODEL', `no local model "${modelId}" in ${this.directories().join(', ')}`)
     if (!entry.supported) throw new EngineError('UNSUPPORTED_MODEL', `${entry.name}: ${entry.unsupportedReason ?? 'unsupported model'}`)
     const engine = await this.engine()
     const contextLength = this.settings.contextLength()
@@ -354,4 +511,17 @@ async function ggufFiles(directory: string, depth: number): Promise<string[]> {
     }
   }
   return out
+}
+
+/**
+ * The engine's CUDA devices; an engine that predates the `devices` operation reports none.
+ * @param proc - a handshaken engine.
+ * @returns the devices report.
+ */
+async function engineDevices(proc: EngineProcess): Promise<EngineDevices> {
+  try { return await proc.devices() }
+  catch (error) {
+    if (error instanceof EngineError && error.code === 'BAD_REQUEST') return { cuda: false, minComputeCapability: 0, devices: [] }
+    throw error
+  }
 }

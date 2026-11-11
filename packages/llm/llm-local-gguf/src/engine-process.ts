@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import type { EngineDelta, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EnginePlacement, EngineStart } from './types.ts'
+import type { EngineDelta, EngineDevices, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EnginePlacement, EngineStart } from './types.ts'
 
 /** Wire protocol revision this client speaks. */
 export const ENGINE_PROTOCOL_VERSION = 1
@@ -133,6 +133,14 @@ export class EngineProcess {
     if (hello.protocol !== ENGINE_PROTOCOL_VERSION) {
       throw new EngineError('ENGINE_PROTOCOL', `local model engine speaks protocol ${hello.protocol}; this harness requires ${ENGINE_PROTOCOL_VERSION}`)
     }
+  }
+
+  /**
+   * Report the CUDA devices this build can use; a CPU build reports none.
+   * @returns devices and the kernels' minimum compute capability.
+   */
+  devices(): Promise<EngineDevices> {
+    return this.request<EngineDevices>({ op: 'devices' }).result
   }
 
   /**

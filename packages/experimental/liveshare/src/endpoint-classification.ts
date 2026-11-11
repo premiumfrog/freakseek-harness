@@ -218,6 +218,9 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'localModels/snapshot': 'owner-only', // owner local model catalog and engine state
   'localModels/load': 'owner-only', // loads a model into the owner's engine
   'localModels/loadFile': 'owner-only', // imports a file from the owner's disk and loads it
+  'localModels/importFile': 'owner-only', // copies a file from the owner's disk into a collection and loads it
+  'localModels/createCollection': 'owner-only', // creates a folder in the owner's models root
+  'localModels/setActiveCollection': 'owner-only', // switches the owner's model collection
   'localModels/unload': 'owner-only', // releases the owner's loaded model
   'agentPresets/list': 'owner-only', // owner agent presets
   'agentPresets/read': 'owner-only', // owner agent presets

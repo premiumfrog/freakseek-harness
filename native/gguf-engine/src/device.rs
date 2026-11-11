@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use candle_core::Device;
+use serde::Serialize;
 
 use crate::engine::EngineError;
 
@@ -32,7 +33,11 @@ impl Placement {
         let spec = spec.unwrap_or("auto");
         let device = match spec {
             "cpu" => Device::Cpu,
-            "auto" => cuda(0).unwrap_or(Device::Cpu),
+            // `auto` skips a GPU older than the kernels' compute capability, which could open but not run them.
+            "auto" => match devices().ok().and_then(|d| d.into_iter().next()) {
+                Some(d) if d.supported => cuda(0).unwrap_or(Device::Cpu),
+                _ => Device::Cpu,
+            },
             "cuda" => cuda(0)?,
             other => match other.strip_prefix("cuda:").and_then(|n| n.parse::<usize>().ok()) {
                 Some(ordinal) => cuda(ordinal)?,
@@ -67,6 +72,53 @@ pub fn cuda_compiled() -> bool {
     cfg!(feature = "cuda")
 }
 
+/// Lowest compute capability the CUDA kernels were built for, as `major * 10 + minor`.
+/// The build's `CUDA_COMPUTE_CAP` sets it; FreakSeek releases build for 75 (RTX 20-series), and newer
+/// GPUs compile the kernels' PTX on first use.
+pub fn min_compute_capability() -> u32 {
+    option_env!("CUDA_COMPUTE_CAP").and_then(|v| v.trim().parse().ok()).unwrap_or(75)
+}
+
+/// One CUDA device as the driver reports it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInfo {
+    pub ordinal: usize,
+    pub name: String,
+    /// `major.minor`, for example `8.6`.
+    pub compute_capability: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    /// The device meets [`min_compute_capability`].
+    pub supported: bool,
+}
+
+/// CUDA devices visible to this build; empty for a CPU build or when the driver reports none.
+pub fn devices() -> Result<Vec<DeviceInfo>> {
+    #[cfg(feature = "cuda")]
+    {
+        use candle_core::cuda_backend::cudarc::driver::CudaContext;
+        let Ok(count) = CudaContext::device_count() else { return Ok(Vec::new()) };
+        let mut out = Vec::new();
+        for ordinal in 0..usize::try_from(count).unwrap_or(0) {
+            let ctx = CudaContext::new(ordinal).map_err(|e| anyhow::anyhow!("CUDA device {ordinal}: {e:?}"))?;
+            let (major, minor) = ctx.compute_capability().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            let (free, total) = ctx.mem_get_info().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            out.push(DeviceInfo {
+                ordinal,
+                name: ctx.name().map_err(|e| anyhow::anyhow!("{e:?}"))?,
+                compute_capability: format!("{major}.{minor}"),
+                total_bytes: total as u64,
+                free_bytes: free as u64,
+                supported: (major * 10 + minor) as u32 >= min_compute_capability(),
+            });
+        }
+        Ok(out)
+    }
+    #[cfg(not(feature = "cuda"))]
+    Ok(Vec::new())
+}
+
 fn cuda(ordinal: usize) -> Result<Device> {
     if !cuda_compiled() {
         return Err(EngineError { code: "DEVICE_UNAVAILABLE", message: "this engine was built without CUDA; rebuild with `--features cuda`".into() }.into());
@@ -87,6 +139,9 @@ mod tests {
             assert!(Placement::resolve(Some("cuda"), None).is_err());
         }
         assert!(Placement::resolve(Some("tpu"), None).is_err());
+        if !cuda_compiled() {
+            assert!(devices().unwrap().is_empty());
+        }
     }
 
     #[test]

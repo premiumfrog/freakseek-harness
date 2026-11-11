@@ -74,6 +74,53 @@ export class LocalModelsService extends TypertRemoteService {
   }
 
   /**
+   * Copy a GGUF file from anywhere on disk into the active collection, load the copy, and make it the default model
+   * of new conversations when the deployment has one.
+   * @param path - absolute path to a `.gguf` file, such as one chosen in the desktop file dialog or dropped on the window.
+   * @returns the copy's model id and the snapshot after loading, or the failure reason.
+   */
+  @Remote('importFile')
+  async importFile(path: string): Promise<LocalModelsFileResult> {
+    try {
+      const modelId = await this.runtime.importFile(path)
+      await this.ctx.get('agentDefaultModel')?.saveSelection({ provider: LOCAL_PROVIDER, model: modelId })
+      return { ok: true, modelId, snapshot: this.runtime.snapshot() }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message, snapshot: this.runtime.snapshot() }
+    }
+  }
+
+  /**
+   * Create a collection folder under the models root and make it the active collection.
+   * @param name - folder name: 1–64 characters, portable on Windows.
+   * @returns the snapshot listing the new, empty collection, or the failure reason.
+   */
+  @Remote('createCollection')
+  async createCollection(name: string): Promise<LocalModelsActionResult> {
+    try {
+      await this.runtime.createCollection(name)
+      return { ok: true, snapshot: this.runtime.snapshot() }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message, snapshot: this.runtime.snapshot() }
+    }
+  }
+
+  /**
+   * Make a collection active, so the catalog lists its models; a loaded model stays loaded.
+   * @param id - collection id from the snapshot; `''` selects the models root.
+   * @returns the snapshot after switching, or the failure reason.
+   */
+  @Remote('setActiveCollection')
+  async setActiveCollection(id: string): Promise<LocalModelsActionResult> {
+    try {
+      await this.runtime.setActiveCollection(id)
+      return { ok: true, snapshot: this.runtime.snapshot() }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message, snapshot: this.runtime.snapshot() }
+    }
+  }
+
+  /**
    * Release the loaded model's memory.
    * @returns the snapshot after unloading, or the failure reason.
    */

@@ -2044,6 +2044,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the model id and snapshot after loading, or the failure reason.',
       },
       {
+        signature: '@Remote(\'importFile\') async importFile(path: string): Promise<LocalModelsFileResult>',
+        description: 'Copy a GGUF file from anywhere on disk into the active collection, load the copy, and make it the default model of new conversations when the deployment has one.',
+        parameters: [{ name: 'path', description: 'absolute path to a `.gguf` file, such as one chosen in the desktop file dialog or dropped on the window.' }],
+        returns: 'the copy\'s model id and the snapshot after loading, or the failure reason.',
+      },
+      {
+        signature: '@Remote(\'createCollection\') async createCollection(name: string): Promise<LocalModelsActionResult>',
+        description: 'Create a collection folder under the models root and make it the active collection.',
+        parameters: [{ name: 'name', description: 'folder name: 1–64 characters, portable on Windows.' }],
+        returns: 'the snapshot listing the new, empty collection, or the failure reason.',
+      },
+      {
+        signature: '@Remote(\'setActiveCollection\') async setActiveCollection(id: string): Promise<LocalModelsActionResult>',
+        description: 'Make a collection active, so the catalog lists its models; a loaded model stays loaded.',
+        parameters: [{ name: 'id', description: 'collection id from the snapshot; `\'\'` selects the models root.' }],
+        returns: 'the snapshot after switching, or the failure reason.',
+      },
+      {
         signature: '@Remote(\'unload\') async unload(): Promise<LocalModelsActionResult>',
         description: 'Release the loaded model\'s memory.',
         parameters: [],
@@ -6391,6 +6409,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
   {
+    name: 'EngineDevice',
+    declaration: 'export interface EngineDevice {\n    readonly ordinal: number;\n    readonly name: string;\n    readonly computeCapability: string;\n    readonly totalBytes: number;\n    readonly freeBytes: number;\n    readonly supported: boolean;\n}',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n    system?: never;\n}',
   },
@@ -7071,12 +7093,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LocalAtInput {\n    readonly date: string;\n    readonly time: string;\n    readonly time_zone: string;\n}',
   },
   {
+    name: 'LocalEngineInfo',
+    declaration: 'export interface LocalEngineInfo {\n    readonly path: string;\n    readonly accelerator: \'cuda\' | \'cpu\';\n    readonly devices: readonly EngineDevice[];\n    readonly fallbackReason?: string;\n}',
+  },
+  {
     name: 'LocalizedText',
     declaration: 'export type LocalizedText = string | {\n    readonly en: string;\n    readonly [locale: string]: string;\n};',
   },
   {
+    name: 'LocalModelCollection',
+    declaration: 'export interface LocalModelCollection {\n    readonly id: string;\n    readonly modelCount: number;\n}',
+  },
+  {
+    name: 'LocalModelCollections',
+    declaration: 'export interface LocalModelCollections {\n    readonly root: string;\n    readonly active: string;\n    readonly items: readonly LocalModelCollection[];\n}',
+  },
+  {
     name: 'LocalModelEntry',
-    declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n}',
+    declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n    readonly collection?: string;\n}',
   },
   {
     name: 'LocalModelsActionResult',
@@ -7088,7 +7122,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalModelsSnapshot',
-    declaration: 'export interface LocalModelsSnapshot {\n    readonly state: LocalModelsState;\n    readonly directories: readonly string[];\n    readonly models: readonly LocalModelEntry[];\n    readonly problems: readonly {\n        readonly directory: string;\n        readonly reason: string;\n    }[];\n}',
+    declaration: 'export interface LocalModelsSnapshot {\n    readonly state: LocalModelsState;\n    readonly directories: readonly string[];\n    readonly models: readonly LocalModelEntry[];\n    readonly problems: readonly {\n        readonly directory: string;\n        readonly reason: string;\n    }[];\n    readonly engine?: LocalEngineInfo;\n    readonly collections?: LocalModelCollections;\n}',
   },
   {
     name: 'LocalModelsState',

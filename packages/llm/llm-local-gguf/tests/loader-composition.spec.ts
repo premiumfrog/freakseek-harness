@@ -1,7 +1,7 @@
 /** A Loader-booted `local` route lists GGUF files and streams replies from the real engine process. */
 
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -50,12 +50,22 @@ function moduleLoader(modules: ReadonlyMap<string, unknown>): ModuleLoaderV2 {
   }
 }
 
-async function boot(): Promise<{ ctx: Context; models: string }> {
-  root = await mkdtemp(join(tmpdir(), 'dsh-local-gguf-'))
+/** Boot variants: collections under a models root instead of explicit directories, and engine-config lines. */
+interface BootOptions {
+  readonly collections?: boolean
+  readonly engine?: readonly string[]
+  /** Reuse this root instead of a fresh one, as a restart does. */
+  readonly root?: string
+}
+
+async function boot(options: BootOptions = {}): Promise<{ ctx: Context; models: string }> {
+  root = options.root ?? await mkdtemp(join(tmpdir(), 'dsh-local-gguf-'))
   const models = join(root, 'models')
-  await mkdir(join(models, 'family'), { recursive: true })
-  await writeBigramModel(join(models, 'family', 'bigram-hi.gguf'), 'Hi!')
-  await writeFile(join(models, 'not-a-model.gguf'), 'garbage')
+  if (options.root === undefined) {
+    await mkdir(join(models, 'family'), { recursive: true })
+    await writeBigramModel(join(models, 'family', 'bigram-hi.gguf'), 'Hi!')
+    await writeFile(join(models, 'not-a-model.gguf'), 'garbage')
+  }
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     '- id: llm',
@@ -63,8 +73,8 @@ async function boot(): Promise<{ ctx: Context; models: string }> {
     '- id: llm-local-gguf',
     "  name: '@deepseek-ai/dsh-llm-local-gguf'",
     '  config:',
-    `    enginePath: ${JSON.stringify(ENGINE)}`,
-    `    modelDirectories: [${JSON.stringify(models)}]`,
+    ...options.engine ?? [`    enginePath: ${JSON.stringify(ENGINE)}`],
+    options.collections === true ? `    modelsRoot: ${JSON.stringify(models)}` : `    modelDirectories: [${JSON.stringify(models)}]`,
     `    importedModelsFile: ${JSON.stringify(join(root, 'imported.json'))}`,
     '    contextLength: 512',
     '    temperature: 0',
@@ -201,4 +211,66 @@ it('stops the engine process when the plugin is disposed', async () => {
   await context?.fiber.dispose()
   context = undefined
   expect(await service.load('family/bigram-hi')).toMatchObject({ ok: false, reason: 'local model provider is shutting down' })
+})
+
+it('lists the active collection, switches and creates collections, and resolves models across them', async () => {
+  const { ctx, models } = await boot({ collections: true })
+  const first = await ctx.localModels.snapshot()
+  expect(first.collections).toEqual({ root: models, active: '', items: [{ id: '', modelCount: 1 }, { id: 'family', modelCount: 1 }] })
+  expect(first.models.map(m => m.id)).toEqual(['not-a-model'])
+
+  const family = await ctx.localModels.setActiveCollection('family')
+  expect(family).toMatchObject({ ok: true, snapshot: { collections: { active: 'family' }, directories: [join(models, 'family')] } })
+  expect(family.snapshot.models.map(m => [m.id, m.collection])).toEqual([['family/bigram-hi', 'family']])
+  expect(JSON.parse(await readFile(join(root!, 'state.json'), 'utf8'))).toEqual({ version: 1, activeCollection: 'family' })
+
+  const coding = await ctx.localModels.createCollection('  coding ')
+  expect(coding).toMatchObject({ ok: true, snapshot: { collections: { active: 'coding' }, models: [] } })
+  for (const name of ['', 'a/b', '..', 'CON', 'x'.repeat(65), 'trailing.']) {
+    expect(await ctx.localModels.createCollection(name)).toMatchObject({ ok: false })
+  }
+  expect(await ctx.localModels.setActiveCollection('missing')).toMatchObject({ ok: false })
+  // A model outside the active collection still answers by id, as a conversation started earlier needs.
+  expect(await ctx.localModels.load('family/bigram-hi')).toMatchObject({ ok: true, snapshot: { state: { kind: 'loaded' } } })
+})
+
+it('copies an imported GGUF file into the active collection, loads it, and keeps the collection after a restart', async () => {
+  const { ctx, models } = await boot({ collections: true })
+  await ctx.localModels.createCollection('coding')
+  const outside = join(root!, 'elsewhere', 'picked.gguf')
+  await mkdir(dirname(outside), { recursive: true })
+  await writeBigramModel(outside, 'Picked!')
+  const imported = await ctx.localModels.importFile(outside)
+  expect(imported).toMatchObject({ ok: true, modelId: 'coding/picked', snapshot: { state: { kind: 'loaded', modelId: 'coding/picked' } } })
+  expect(existsSync(join(models, 'coding', 'picked.gguf'))).toBe(true)
+  // The same file again reuses the copy; a different file of that name gets a numbered copy.
+  expect(await ctx.localModels.importFile(outside)).toMatchObject({ ok: true, modelId: 'coding/picked' })
+  await writeBigramModel(outside, 'Changed reply')
+  expect(await ctx.localModels.importFile(outside)).toMatchObject({ ok: true, modelId: 'coding/picked (2)' })
+  expect(await ctx.localModels.importFile(join(root!, 'cordis.yml'))).toMatchObject({ ok: false })
+
+  const kept = root!
+  await context?.fiber.dispose()
+  context = undefined
+  const { ctx: restarted } = await boot({ collections: true, root: kept })
+  expect((await restarted.localModels.snapshot()).collections?.active).toBe('coding')
+})
+
+it.skipIf(process.platform === 'win32')('falls back to the CPU engine when the CUDA engine cannot start', async () => {
+  const engines = await mkdtemp(join(tmpdir(), 'dsh-local-gguf-engines-'))
+  try {
+    await mkdir(join(engines, 'cuda'), { recursive: true })
+    await mkdir(join(engines, 'cpu'), { recursive: true })
+    // A CUDA build on a PC without the NVIDIA driver exits before it can answer.
+    await writeFile(join(engines, 'cuda', engineFileName()), '#!/bin/sh\necho "nvcuda.dll was not found" >&2\nexit 1\n')
+    await chmod(join(engines, 'cuda', engineFileName()), 0o755)
+    await copyFile(ENGINE, join(engines, 'cpu', engineFileName()))
+    await chmod(join(engines, 'cpu', engineFileName()), 0o755)
+    const { ctx } = await boot({ engine: [`    engineDirectory: ${JSON.stringify(engines)}`] })
+    const loaded = await ctx.localModels.load('family/bigram-hi')
+    expect(loaded).toMatchObject({ ok: true, snapshot: { engine: { path: join(engines, 'cpu', engineFileName()), accelerator: 'cpu', devices: [] } } })
+    expect(loaded.snapshot.engine?.fallbackReason).toContain('the CUDA engine did not start')
+  } finally {
+    await rm(engines, { recursive: true, force: true })
+  }
 })
