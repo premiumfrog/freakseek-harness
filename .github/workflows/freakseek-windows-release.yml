@@ -37,40 +37,7 @@ env:
 jobs:
   prebuild-tests:
     name: Pre-build tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            native/gguf-engine/target
-          key: engine-test-${{ runner.os }}-${{ hashFiles('native/gguf-engine/Cargo.lock') }}
-      - name: Engine tests
-        working-directory: native/gguf-engine
-        run: cargo test --release --locked
-      - uses: pnpm/action-setup@v5.0.0
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: '24'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: FreakSeek package tests
-        run: >-
-          pnpm exec vitest run
-          packages/llm/llm-local-gguf
-          packages/web/web-search-duckduckgo
-          packages/client/ui-settings-local-models
-          packages/client/ui-code-mode
-          packages/bundle
-          packages/util/official-bundles
-          apps/desktop-host
-          apps/cli/tests/freakseek.spec.ts
-          apps/cli/tests/resolved-profile-boot.spec.ts
-          apps/cli/tests/profile-mcp.spec.ts
+    uses: ./.github/workflows/freakseek-ci.yml
 
   engine-cpu:
     name: CPU engine

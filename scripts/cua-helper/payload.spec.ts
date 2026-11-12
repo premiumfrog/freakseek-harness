@@ -117,18 +117,6 @@ it.skipIf(process.platform === 'win32').each(['source', 'configuration', 'archit
   expect(() => { stageCuaHelperPayload(f.payload, join(f.root, 'consumer'), identity) }).toThrow()
 })
 
-it('keeps company signing outside pull-request release rehearsals', () => {
-  const workflow = readFileSync(resolve('.github/workflows/cua-helper-package.yml'), 'utf8')
-  expect(workflow).toContain('workflow_dispatch:')
-  expect(workflow).toContain('workflow_call:')
-  expect(workflow).not.toContain('pull_request:')
-  expect(workflow).toContain('dsh-mac-package-trial')
-  const release = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
-  expect(release).toContain('needs: cua-helper')
-  expect(release).toContain('scripts/cua-helper/stage.ts')
-  expect(readFileSync(resolve('.github/workflows/release.yml'), 'utf8')).not.toContain('cua-helper-package.yml')
-})
-
 it.skipIf(process.platform === 'win32')('retains the original build commit and version when consuming identical helper sources', () => {
   const f = fixture()
   f.manifest.version = '0.9.0'

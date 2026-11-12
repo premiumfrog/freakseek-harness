@@ -1,0 +1,62 @@
+name: FreakSeek · CI
+
+# FreakSeek's own checks, offline and keyless: the GGUF engine's tests and the
+# FreakSeek package tests. Runs on pushes and pull requests, and gates the
+# release workflow, which calls it before any Windows job starts.
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore: ['**.md', 'docs/**', 'branding/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'branding/**']
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freakseek-ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+jobs:
+  tests:
+    name: Engine and package tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            native/gguf-engine/target
+          key: engine-test-${{ runner.os }}-${{ hashFiles('native/gguf-engine/Cargo.lock', 'native/gguf-engine/src/**') }}
+          restore-keys: engine-test-${{ runner.os }}-
+      - name: Engine tests
+        working-directory: native/gguf-engine
+        run: cargo test --release --locked
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: FreakSeek package tests
+        run: >-
+          pnpm exec vitest run
+          packages/llm/llm-local-gguf
+          packages/web/web-search-duckduckgo
+          packages/client/ui-settings-local-models
+          packages/client/ui-code-mode
+          packages/bundle
+          packages/util/official-bundles
+          apps/desktop-host
+          apps/cli/tests/freakseek.spec.ts
+          apps/cli/tests/resolved-profile-boot.spec.ts
+          apps/cli/tests/profile-mcp.spec.ts
