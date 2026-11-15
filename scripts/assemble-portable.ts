@@ -30,10 +30,36 @@ const ROOT = resolve(import.meta.dirname, '..')
 const DEV_ONLY = new Set(['node_modules', 'tests', 'test', 'coverage', '.cache', '.turbo', '.desktop-build'])
 
 /**
- * Runtime packages the portable folder leaves out. The Office skills need the desktop primary
- * runtime, which the portable folder does not ship, so their LibreOffice payload is never loaded.
+ * Runtime packages the portable folder leaves out, keyed `<parent folder>/<entry>`. The Office
+ * skills need the desktop primary runtime, which the portable folder does not ship, so their
+ * LibreOffice payload is never loaded. The offline profile loads no cloud provider SDK, telemetry
+ * exporter, speech model, documentation site, or session inspector.
  */
-const PRUNED_PACKAGES = new Set(['@deepseek-ai/libreoffice-kit-wasm'])
+const PRUNED_PACKAGES = new Set([
+  '@deepseek-ai/libreoffice-kit-wasm', '@deepseek-ai/website', '@deepseek-ai/dsh-experimental-inspector',
+  'node_modules/openai', 'node_modules/@anthropic-ai', 'node_modules/@google', 'node_modules/@aws-sdk',
+  'node_modules/@smithy', 'node_modules/@earendil-works', 'node_modules/@opentelemetry',
+])
+
+/** Unscoped package name prefixes the portable folder leaves out: per-platform speech binaries. */
+const PRUNED_PREFIXES = ['sherpa-onnx-']
+
+/** File suffixes no runtime reads: source maps, type declarations, and incremental build state. */
+const PRUNED_SUFFIXES = ['.map', '.d.ts', '.d.mts', '.d.cts', '.tsbuildinfo']
+
+/**
+ * Whether the portable folder omits a runtime tree entry.
+ * @param parent - name of the folder that holds the entry.
+ * @param name - entry name.
+ * @param platform - target platform; `node-pty` keeps only its prebuilds.
+ * @returns true when the entry is not copied.
+ */
+function pruned(parent: string, name: string, platform: NodeJS.Platform): boolean {
+  if (PRUNED_PACKAGES.has(`${parent}/${name}`) || PRUNED_SUFFIXES.some(suffix => name.endsWith(suffix))) return true
+  if (parent === 'node_modules') return name === '.bin' || PRUNED_PREFIXES.some(prefix => name.startsWith(prefix))
+  if (parent === 'node-pty') return name === 'third_party' || name === 'src' || name === 'deps'
+  return parent === 'prebuilds' && /^(darwin|linux|win32)-/.test(name) && !name.startsWith(`${platform}-`)
+}
 
 /** Parsed command line. */
 interface Options {
@@ -107,15 +133,16 @@ function deployRuntime(): string {
  * Copy one workspace package's runtime files: everything except development-only folders.
  * @param source - the package directory a deploy symlink points to.
  * @param destination - where the package lives in the portable tree.
+ * @param platform - target platform.
  */
-function materializePackage(source: string, destination: string): void {
+function materializePackage(source: string, destination: string, platform: NodeJS.Platform): void {
   cpSync(source, destination, {
     recursive: true,
     dereference: true,
     filter: (path) => {
       if (path === source) return true
       const name = basename(path)
-      return !DEV_ONLY.has(name) && !name.endsWith('.tsbuildinfo')
+      return !DEV_ONLY.has(name) && !pruned(basename(dirname(path)), name, platform)
     },
   })
 }
@@ -125,21 +152,21 @@ function materializePackage(source: string, destination: string): void {
  * dropped and linked workspace packages are copied without their development folders.
  * @param source - deploy directory.
  * @param destination - `runtime/app`.
+ * @param platform - target platform.
  * @returns the number of linked packages materialized.
  */
-function copyRuntimeTree(source: string, destination: string): number {
+function copyRuntimeTree(source: string, destination: string, platform: NodeJS.Platform): number {
   let linked = 0
   const walk = (from: string, to: string): void => {
     mkdirSync(to, { recursive: true })
     for (const entry of readdirSync(from, { withFileTypes: true })) {
       const path = join(from, entry.name)
       const target = join(to, entry.name)
-      if (entry.name === '.bin' && basename(from) === 'node_modules') continue
-      if (PRUNED_PACKAGES.has(`${basename(from)}/${entry.name}`)) continue
+      if (pruned(basename(from), entry.name, platform)) continue
       if (entry.isSymbolicLink()) {
         const resolved = realpathSync(resolve(dirname(path), readlinkSync(path)))
         if (statSync(resolved).isDirectory()) {
-          materializePackage(resolved, target)
+          materializePackage(resolved, target, platform)
           linked++
         } else {
           copyFileSync(resolved, target)
@@ -215,7 +242,7 @@ function main(): void {
   mkdirSync(join(opts.out, 'runtime'), { recursive: true })
 
   const deployed = opts.app ?? deployRuntime()
-  const linked = copyRuntimeTree(deployed, join(opts.out, 'runtime', 'app'))
+  const linked = copyRuntimeTree(deployed, join(opts.out, 'runtime', 'app'), opts.platform)
   if (opts.app === undefined) rmSync(deployed, { recursive: true, force: true })
   if (!existsSync(join(opts.out, 'runtime', 'app', 'lib', 'index.js'))) {
     throw new Error('assemble-portable: the deployed runtime has no lib/index.js; run pnpm run build first')
