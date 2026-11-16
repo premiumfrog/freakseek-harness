@@ -93,7 +93,19 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
             Command::Load { path, context_length, slots, device, gpu_layers } => {
                 engine = None;
                 let started = std::time::Instant::now();
-                let load = |spec: Option<&str>| Placement::resolve(spec, gpu_layers).and_then(|p| Engine::load(&path, context_length, slots.unwrap_or(4), &p));
+                let progress_out = out.clone();
+                let progress_id = id.to_string();
+                let mut last = std::time::Instant::now();
+                let mut progress = move |done: usize, total: usize| {
+                    // At most ten updates a second, and always the last layer.
+                    if done == total || last.elapsed().as_millis() >= 100 {
+                        last = std::time::Instant::now();
+                        progress_out.send(json!({ "id": progress_id, "type": "progress", "stage": "load", "done": done, "total": total }));
+                    }
+                };
+                let mut load = |spec: Option<&str>| {
+                    Placement::resolve(spec, gpu_layers).and_then(|p| Engine::load_with_progress(&path, context_length, slots.unwrap_or(4), &p, &mut progress))
+                };
                 let mut warning = None;
                 let mut loaded = load(device.as_deref());
                 // With no device preference, a GPU that computes wrong results gives way to the CPU.
@@ -147,6 +159,10 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
                         "id": id, "type": "start", "promptTokens": prompt_tokens, "cachedTokens": cached_tokens, "opensReasoning": opens_reasoning,
                     })),
                     Event::Delta(text) => out.send(json!({ "id": id, "type": "delta", "text": text })),
+                    Event::Prefill { done, total } => out.send(json!({ "id": id, "type": "progress", "stage": "prefill", "done": done, "total": total })),
+                    Event::Decode { tokens, tokens_per_second, context_used } => out.send(json!({
+                        "id": id, "type": "progress", "stage": "decode", "done": tokens, "tokensPerSecond": tokens_per_second, "contextUsed": context_used,
+                    })),
                 };
                 match e.generate(req, &job.cancel, &mut emit) {
                     Ok(o) => out.ok(id, json!(o)),

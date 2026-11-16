@@ -8,13 +8,16 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
-import { Config, placementOf, resolveEngineCandidates, resolveImportedModelsFile, resolveModelSource, resolveStateFile, samplingOf } from './config.ts'
+import {
+  Config, placementOf, resolveEngineCandidates, resolveImportedModelsFile, resolveModelSettingsFile, resolveModelSource, resolveStateFile,
+  samplingOf,
+} from './config.ts'
 import { LocalModelRuntime } from './runtime.ts'
 import { LocalModelsService } from './service.ts'
 
 export {
   Config, ENGINE_DIR_ENV, ENGINE_ENV, engineFileName, MODELS_ROOT_ENV, resolveEngineCandidates, resolveEnginePath,
-  resolveImportedModelsFile, resolveModelDirectories, resolveModelSource, resolveStateFile,
+  resolveImportedModelsFile, resolveModelDirectories, resolveModelSettingsFile, resolveModelSource, resolveStateFile,
 } from './config.ts'
 export type { ModelSource } from './config.ts'
 export { DEFAULT_COLLECTION_ID, validateCollectionName } from './collections.ts'
@@ -54,7 +57,9 @@ export function apply(ctx: Context, config: Config): void {
     importsFile,
     stateFile: () => resolveStateFile(importsFile()),
     shutdownGraceMillis: () => config.shutdownGraceMillis,
-  }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) })
+    modelSettingsFile: () => resolveModelSettingsFile(importsFile()),
+    idleUnloadMinutes: () => config.idleUnloadMinutes.get(),
+  }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) }, (state) => { ctx.emit('local-models/state', state) })
   ctx.effect(() => () => runtime.dispose(), 'llm-local-gguf: engine process')
   ctx.llm.registerAdapter([LOCAL_PROVIDER], new LocalGgufAdapter(runtime, {
     sampling: facts => samplingOf(config, facts),
@@ -72,4 +77,14 @@ export function apply(ctx: Context, config: Config): void {
   }])
   ctx.plugin(LocalModelsService, runtime)
   ctx.on('loader/volatile-update', () => { void runtime.refresh().catch((_reportedOnNextSnapshot: unknown) => []) })
+  if (config.autoLoadLast && !('reason' in engine)) {
+    // Background warm-up: a failure is reported in the Local models state, and a conversation loads on demand anyway.
+    ctx.effect(() => {
+      let cancelled = false
+      void runtime.lastLoadedModel()
+        .then(modelId => (cancelled || modelId === undefined ? undefined : runtime.load(modelId)))
+        .catch((_reportedInState: unknown) => {})
+      return () => { cancelled = true }
+    }, 'llm-local-gguf: reload the last model')
+  }
 }

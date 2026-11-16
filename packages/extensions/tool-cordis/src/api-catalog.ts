@@ -2032,9 +2032,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the current snapshot.',
       },
       {
-        signature: '@Remote(\'load\') async load(modelId: string): Promise<LocalModelsActionResult>',
+        signature: '@Remote(\'load\') async load(modelId: string, options?: LocalModelLoadOptions): Promise<LocalModelsActionResult>',
         description: 'Load one catalog model into memory, replacing the loaded one, and make it the default model of new conversations when the deployment has one.',
-        parameters: [{ name: 'modelId', description: 'catalog model id.' }],
+        parameters: [{ name: 'modelId', description: 'catalog model id.' }, { name: 'options', description: 'settings for this load, saved for later loads when `remember` is set; omitted uses saved settings.' }],
         returns: 'the snapshot after loading, or the failure reason.',
       },
       {
@@ -2042,6 +2042,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Add a GGUF file from anywhere on disk to the catalog, remember it across restarts, load it, and make it the default model of new conversations when the deployment has one.',
         parameters: [{ name: 'path', description: 'absolute path to a `.gguf` file, such as one chosen in the desktop file dialog.' }],
         returns: 'the model id and snapshot after loading, or the failure reason.',
+      },
+      {
+        signature: '@Remote(\'addFile\') async addFile(path: string, copy: boolean): Promise<LocalModelsFileResult>',
+        description: 'Add a GGUF file from anywhere on disk to the catalog without loading it, so a configuration surface can ask for load settings first: copied into the active collection, or remembered in place across restarts.',
+        parameters: [{ name: 'path', description: 'absolute path to a `.gguf` file.' }, { name: 'copy', description: 'copy the file into the active collection instead of listing it in place.' }],
+        returns: 'the model id and snapshot, or the failure reason.',
+      },
+      {
+        signature: '@Remote(\'saveSettings\') async saveSettings(modelId: string, settings: LocalModelSettings): Promise<LocalModelsActionResult>',
+        description: 'Save load and sampling settings for a model file.',
+        parameters: [{ name: 'modelId', description: 'catalog model id.' }, { name: 'settings', description: 'the settings; invalid fields are dropped.' }],
+        returns: 'the snapshot listing the saved settings, or the failure reason.',
       },
       {
         signature: '@Remote(\'importFile\') async importFile(path: string): Promise<LocalModelsFileResult>',
@@ -5161,6 +5173,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; callers own their request inputs and must keep them unchanged until the stream settles.' }],
   },
   {
+    name: 'local-models/state',
+    mode: 'emit',
+    signature: '\'local-models/state\'(state: LocalModelsState): void',
+    summary: 'The local engine\'s state changed without a catalog change: load progress, generation progress, or a finished generation\'s statistics.',
+    description: 'The local engine\'s state changed without a catalog change: load progress, generation progress, or a finished generation\'s statistics. Sent at most four times a second; catalog changes still arrive as `llm/models-updated`.',
+    parameters: [{ name: 'state', description: 'the new state.' }],
+  },
+  {
     name: 'mcp-manager/status',
     mode: 'parallel',
     signature: '\'mcp-manager/status\'(name: string, status: McpManagedServerStatus): void | Promise<void>',
@@ -6414,11 +6434,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EngineFinishReason',
-    declaration: 'export type EngineFinishReason = \'stop\' | \'length\' | \'cancelled\';',
+    declaration: 'export type EngineFinishReason = \'stop\' | \'length\' | \'cancelled\' | \'repetition\';',
   },
   {
     name: 'EngineOutcome',
     declaration: 'export interface EngineOutcome {\n    readonly finishReason: EngineFinishReason;\n    readonly promptTokens: number;\n    readonly cachedTokens: number;\n    readonly completionTokens: number;\n    readonly prefillMs: number;\n    readonly decodeMs: number;\n    readonly promptTokensPerSecond: number;\n    readonly tokensPerSecond: number;\n}',
+  },
+  {
+    name: 'EngineProgress',
+    declaration: 'export type EngineProgress = {\n    readonly stage: \'load\';\n    readonly done: number;\n    readonly total: number;\n} | {\n    readonly stage: \'prefill\';\n    readonly done: number;\n    readonly total: number;\n} | {\n    readonly stage: \'decode\';\n    readonly done: number;\n    readonly tokensPerSecond: number;\n    readonly contextUsed: number;\n};',
   },
   {
     name: 'EpochHeader',
@@ -7118,15 +7142,23 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalModelEntry',
-    declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n    readonly collection?: string;\n}',
+    declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n    readonly collection?: string;\n    readonly structure?: LocalModelStructure;\n    readonly settings?: LocalModelSettings;\n}',
+  },
+  {
+    name: 'LocalModelLoadOptions',
+    declaration: 'export interface LocalModelLoadOptions {\n    readonly settings?: LocalModelSettings;\n    readonly remember?: boolean;\n}',
   },
   {
     name: 'LocalModelLoadStats',
-    declaration: 'export interface LocalModelLoadStats {\n    readonly gpuExperts: number;\n    readonly experts: number;\n    readonly vramTotalBytes: number | null;\n    readonly vramFreeBytes: number | null;\n    readonly loadMs: number;\n    readonly warning?: string;\n    readonly lastRun?: EngineOutcome;\n}',
+    declaration: 'export interface LocalModelLoadStats {\n    readonly gpuExperts: number;\n    readonly experts: number;\n    readonly vramTotalBytes: number | null;\n    readonly vramFreeBytes: number | null;\n    readonly loadMs: number;\n    readonly warning?: string;\n    readonly lastRun?: EngineOutcome;\n    readonly activity?: EngineProgress;\n}',
   },
   {
     name: 'LocalModelsActionResult',
     declaration: 'export type LocalModelsActionResult = {\n    readonly ok: true;\n    readonly snapshot: LocalModelsSnapshot;\n} | {\n    readonly ok: false;\n    readonly reason: string;\n    readonly snapshot: LocalModelsSnapshot;\n};',
+  },
+  {
+    name: 'LocalModelSettings',
+    declaration: 'export interface LocalModelSettings {\n    readonly askOnLoad: boolean;\n    readonly contextLength?: number;\n    readonly gpuLayers?: number;\n    readonly temperature?: number;\n    readonly topP?: number;\n    readonly topK?: number;\n    readonly thinking?: boolean;\n}',
   },
   {
     name: 'LocalModelsFileResult',
@@ -7138,7 +7170,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalModelsState',
-    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n    readonly device: string;\n    readonly gpuLayers: number;\n    readonly stats: LocalModelLoadStats;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
+    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n    readonly layersLoaded?: number;\n    readonly layers?: number;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n    readonly device: string;\n    readonly gpuLayers: number;\n    readonly stats: LocalModelLoadStats;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'LocalModelStructure',
+    declaration: 'export interface LocalModelStructure {\n    readonly layers: number;\n    readonly attentionLayers: number;\n    readonly experts: number;\n    readonly expertsUsed: number;\n    readonly kvBytesPerToken: number;\n    readonly stateBytes: number;\n    readonly hasMtp: boolean;\n    readonly weightTypes: readonly (readonly [\n        string,\n        number\n    ])[];\n}',
   },
   {
     name: 'LogExporterOptions',

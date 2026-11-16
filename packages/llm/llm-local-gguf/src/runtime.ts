@@ -16,11 +16,17 @@ import {
 import type { ModelSource } from './config.ts'
 import { EngineError, EngineProcess } from './engine-process.ts'
 import { addImport, importedModelId, readImports, validateModelFile } from './imports.ts'
+import { parseModelSettings, readModelSettings, writeModelSettings } from './model-settings.ts'
+import type { ModelSettingsDocument } from './model-settings.ts'
 import type { GenerateHandlers } from './engine-process.ts'
 import type {
-  EngineCandidate, EngineDevices, EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, LocalEngineInfo,
-  LocalModelCollections, LocalModelEntry, LocalModelsSnapshot, LocalModelsState,
+  EngineCandidate, EngineDevices, EngineGenerateRequest, EngineModelFacts, EnginePlacement, EngineOutcome, EngineProgress, LocalEngineInfo,
+  LocalModelCollections, LocalModelEntry, LocalModelLoadOptions, LocalModelSettings, LocalModelsSnapshot, LocalModelsState,
+  LocalModelStructure,
 } from './types.ts'
+
+/** Shortest interval between live state notices. */
+const ACTIVITY_INTERVAL_MS = 250
 
 /** `general.file_type` codes (llama.cpp `llama_ftype`) to display names. */
 const FILE_TYPES: Readonly<Record<number, string>> = {
@@ -48,6 +54,25 @@ export interface RuntimeSettings {
   /** Compute device and GPU layer count requested at load. */
   placement(): EnginePlacement
   shutdownGraceMillis(): number
+  /** JSON file holding per-model settings and the last loaded model. */
+  modelSettingsFile(): string
+  /** Minutes without a generation after which the loaded model is released; 0 keeps it loaded. */
+  idleUnloadMinutes(): number
+}
+
+/** Header structure for model cards; absent when the engine could not read the header. */
+function structureOf(facts: EngineModelFacts): LocalModelStructure | undefined {
+  if (facts.layers === null) return undefined
+  return {
+    layers: facts.layers,
+    attentionLayers: facts.attentionLayers ?? facts.layers,
+    experts: facts.experts ?? 0,
+    expertsUsed: facts.expertsUsed ?? 0,
+    kvBytesPerToken: facts.kvBytesPerToken ?? 0,
+    stateBytes: facts.stateBytes ?? 0,
+    hasMtp: facts.hasMtp,
+    weightTypes: facts.weightTypes,
+  }
 }
 
 interface CachedFacts {
@@ -84,12 +109,98 @@ export class LocalModelRuntime {
   private disposed = false
   /** Orders read-modify-write updates of the imports file. */
   private importing: Promise<unknown> = Promise.resolve()
+  /** Per-model settings, read on first use. */
+  private modelSettings: ModelSettingsDocument | undefined
+  private lastActivity = 0
+  private idleTimer: ReturnType<typeof setTimeout> | undefined
 
   /**
    * @param settings - live settings readers.
    * @param onChange - called after the catalog or state changes.
+   * @param onActivity - called with the new state when only load or generation progress changed, at most every 250 ms.
    */
-  constructor(private readonly settings: RuntimeSettings, private readonly onChange: () => void) {}
+  constructor(
+    private readonly settings: RuntimeSettings,
+    private readonly onChange: () => void,
+    private readonly onActivity: (state: LocalModelsState) => void = () => {},
+  ) {}
+
+  /** Publish a progress-only state change, dropping updates closer than {@link ACTIVITY_INTERVAL_MS} unless `force`. */
+  private setActivity(state: LocalModelsState, force = false): void {
+    this.state = state
+    const now = Date.now()
+    if (!force && now - this.lastActivity < ACTIVITY_INTERVAL_MS) return
+    this.lastActivity = now
+    this.onActivity(state)
+  }
+
+  /** Saved per-model settings document, read once; an unreadable file counts as empty and is overwritten on save. */
+  private async settingsDocument(): Promise<ModelSettingsDocument> {
+    if (this.modelSettings === undefined) {
+      try { this.modelSettings = await readModelSettings(this.settings.modelSettingsFile()) }
+      catch (error) {
+        this.problems.push({ directory: this.settings.modelSettingsFile(), reason: (error as Error).message })
+        this.modelSettings = { models: {} }
+      }
+    }
+    return this.modelSettings
+  }
+
+  private async saveSettingsDocument(doc: ModelSettingsDocument): Promise<void> {
+    this.modelSettings = doc
+    const saved = this.importing.then(() => writeModelSettings(this.settings.modelSettingsFile(), doc))
+    this.importing = saved.catch((_reportedToCaller: unknown) => {})
+    await saved
+  }
+
+  /**
+   * Saved settings of a model, for sampling and loading.
+   * @param modelId - catalog id.
+   * @returns the settings, or `undefined` when none are saved or the model is unknown.
+   */
+  settingsFor(modelId: string): LocalModelSettings | undefined {
+    const entry = this.find(modelId)
+    return entry === undefined ? undefined : this.modelSettings?.models[entry.path]
+  }
+
+  /**
+   * Save settings for a model file.
+   * @param modelId - catalog id.
+   * @param settings - settings received from a configuration surface.
+   * @throws EngineError `UNKNOWN_MODEL` for an id the catalog does not hold.
+   */
+  async saveSettings(modelId: string, settings: unknown): Promise<void> {
+    const entry = this.find(modelId)
+    if (entry === undefined) throw new EngineError('UNKNOWN_MODEL', `no local model "${modelId}"`)
+    const doc = await this.settingsDocument()
+    await this.saveSettingsDocument({ ...doc, models: { ...doc.models, [entry.path]: parseModelSettings(settings) } })
+    await this.refresh()
+  }
+
+  /**
+   * Catalog id of the model loaded last in an earlier run, if it is still in the catalog.
+   * @returns the id, or `undefined`.
+   */
+  async lastLoadedModel(): Promise<string | undefined> {
+    const doc = await this.settingsDocument()
+    if (doc.lastLoaded === undefined) return undefined
+    if (this.all.length === 0) await this.refresh()
+    return this.all.find(e => e.path === doc.lastLoaded && e.supported)?.id
+  }
+
+  /** Restart the idle timer; it releases the loaded model after the configured idle minutes. */
+  private armIdleTimer(): void {
+    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
+    const minutes = this.settings.idleUnloadMinutes()
+    if (minutes <= 0 || this.disposed) return
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined
+      if (this.loaded !== undefined) void this.unload().catch((_reportedInState: unknown) => {})
+    }, minutes * 60_000)
+    // An idle timer must not keep a finished CLI process alive.
+    this.idleTimer.unref()
+  }
 
   /** Run `task` after every earlier engine operation settles. */
   private serial<T>(task: () => Promise<T>): Promise<T> {
@@ -210,7 +321,8 @@ export class LocalModelRuntime {
     if (this.loaded?.modelId === modelId) return this.loaded.contextLength
     const entry = this.find(modelId)
     if (entry === undefined) return undefined
-    return Math.min(this.settings.contextLength(), entry.trainedContextLength ?? this.settings.contextLength())
+    const configured = this.modelSettings?.models[entry.path]?.contextLength ?? this.settings.contextLength()
+    return Math.min(configured, entry.trainedContextLength ?? configured)
   }
 
   /**
@@ -218,6 +330,7 @@ export class LocalModelRuntime {
    * @returns the refreshed catalog.
    */
   async refresh(): Promise<readonly LocalModelEntry[]> {
+    const saved = (await this.settingsDocument()).models
     const entries: LocalModelEntry[] = []
     const problems: { directory: string; reason: string }[] = []
     const files: { directory: string; path: string; imported?: true; collection?: string; idRoot?: string }[] = []
@@ -279,6 +392,7 @@ export class LocalModelRuntime {
         continue
       }
       const quantization = facts.fileType === null ? undefined : FILE_TYPES[facts.fileType]
+      const structure = structureOf(facts)
       entries.push({
         id,
         name: displayName(facts, path, quantization),
@@ -294,6 +408,8 @@ export class LocalModelRuntime {
         tools: facts.templateTools,
         reasoning: facts.templateReasoning,
         ...member,
+        ...structure === undefined ? {} : { structure },
+        ...saved[path] === undefined ? {} : { settings: saved[path] },
       })
     }
     const active = this.active ?? DEFAULT_COLLECTION_ID
@@ -358,13 +474,24 @@ export class LocalModelRuntime {
    * @throws EngineError `INVALID_MODEL_FILE`, `IMPORT_FAILED`, or any load failure.
    */
   async importFile(path: unknown): Promise<string> {
+    const id = await this.copyFile(path)
+    await this.load(id)
+    return id
+  }
+
+  /**
+   * Copy a GGUF file into the active collection (or the first configured directory) without loading it.
+   * @param path - absolute `.gguf` path received from a configuration surface.
+   * @returns the copy's catalog id.
+   * @throws EngineError `INVALID_MODEL_FILE` or `IMPORT_FAILED`.
+   */
+  async copyFile(path: unknown): Promise<string> {
     const file = await validateModelFile(path)
     const [target] = this.directories()
     if (target === undefined) throw new EngineError('IMPORT_FAILED', 'no model folder to copy into')
     const copy = await copyIntoCollection(file, target)
     const entry = (await this.refresh()).find(e => e.path === copy)
     if (entry === undefined) throw new EngineError('INVALID_MODEL_FILE', `${copy} did not enter the local model catalog`)
-    await this.load(entry.id)
     return entry.id
   }
 
@@ -405,8 +532,28 @@ export class LocalModelRuntime {
    * @param modelId - catalog id.
    * @returns the effective context window.
    */
-  load(modelId: string): Promise<number> {
-    return this.serial(() => this.loadNow(modelId))
+  load(modelId: string, options?: LocalModelLoadOptions): Promise<number> {
+    return this.serial(async () => {
+      if (options?.remember === true && options.settings !== undefined) await this.saveSettings(modelId, options.settings)
+      return this.loadNow(modelId, options?.settings === undefined ? undefined : parseModelSettings(options.settings))
+    })
+  }
+
+  /**
+   * Add a GGUF file from anywhere on disk to the catalog and remember it, without loading it.
+   * @param path - absolute `.gguf` path received from a configuration surface.
+   * @returns the model's catalog id.
+   * @throws EngineError `INVALID_MODEL_FILE` for a path that is not a readable `.gguf` file.
+   */
+  async addFile(path: unknown): Promise<string> {
+    const file = await validateModelFile(path)
+    const added = this.importing.then(() => addImport(this.settings.importsFile(), file))
+    this.importing = added.catch((_reportedToCaller: unknown) => {})
+    await added
+    await this.refresh()
+    const entry = this.all.find(e => e.path === file)
+    if (entry === undefined) throw new EngineError('INVALID_MODEL_FILE', `${file} did not enter the local model catalog`)
+    return entry.id
   }
 
   /**
@@ -420,7 +567,7 @@ export class LocalModelRuntime {
     return supported.length === 1 ? supported[0] : undefined
   }
 
-  private async loadNow(modelId: string): Promise<number> {
+  private async loadNow(modelId: string, override?: LocalModelSettings): Promise<number> {
     let entry = this.find(modelId)
     if (entry === undefined) {
       await this.refresh()
@@ -435,16 +582,29 @@ export class LocalModelRuntime {
     if (entry === undefined) throw new EngineError('UNKNOWN_MODEL', `no local model "${modelId}" in ${this.directories().join(', ')}`)
     if (!entry.supported) throw new EngineError('UNSUPPORTED_MODEL', `${entry.name}: ${entry.unsupportedReason ?? 'unsupported model'}`)
     const engine = await this.engine()
-    const contextLength = this.settings.contextLength()
+    const chosen = override ?? (await this.settingsDocument()).models[entry.path]
+    const contextLength = chosen?.contextLength ?? this.settings.contextLength()
     const effective = Math.min(contextLength, entry.trainedContextLength ?? contextLength)
-    if (this.loaded?.path === entry.path && this.loaded.contextLength === effective) {
+    const base = this.settings.placement()
+    const placement: EnginePlacement = chosen?.gpuLayers === undefined ? base : { ...base, gpuLayers: chosen.gpuLayers }
+    // An explicit override reloads even at the same context window, since the placement may differ.
+    if (override === undefined && this.loaded?.path === entry.path && this.loaded.contextLength === effective) {
+      this.armIdleTimer()
       return this.loaded.contextLength
     }
     this.loaded = undefined
     this.setState({ kind: 'loading', modelId })
     try {
-      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), this.settings.placement())
+      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), placement, (progress) => {
+        if (progress.stage === 'load') this.setActivity({ kind: 'loading', modelId, layersLoaded: progress.done, layers: progress.total })
+      })
       this.loaded = { modelId, path: entry.path, contextLength: result.contextLength }
+      const doc = await this.settingsDocument()
+      if (doc.lastLoaded !== entry.path) {
+        // Remembering the model for the next start is best effort; the load itself succeeded.
+        await this.saveSettingsDocument({ ...doc, lastLoaded: entry.path }).catch((_bestEffort: unknown) => {})
+      }
+      this.armIdleTimer()
       this.setState({
         kind: 'loaded', modelId, contextLength: result.contextLength, device: result.device, gpuLayers: result.gpuLayers,
         stats: {
@@ -484,11 +644,26 @@ export class LocalModelRuntime {
     return this.serial(async () => {
       await this.loadNow(modelId)
       const engine = await this.engine()
-      const outcome = await engine.generate(request, handlers, signal)
-      if (this.state.kind === 'loaded' && this.state.modelId === modelId && outcome.finishReason !== 'cancelled') {
-        this.setState({ ...this.state, stats: { ...this.state.stats, lastRun: outcome } })
+      const track = (activity: EngineProgress | undefined, force = false) => {
+        if (this.state.kind !== 'loaded' || this.state.modelId !== modelId) return
+        const { activity: _previous, ...stats } = this.state.stats
+        this.setActivity({ ...this.state, stats: activity === undefined ? stats : { ...stats, activity } }, force)
       }
-      return outcome
+      if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
+      try {
+        const outcome = await engine.generate(request, {
+          ...handlers,
+          onProgress: (progress) => { track(progress); handlers.onProgress?.(progress) },
+        }, signal)
+        if (this.state.kind === 'loaded' && this.state.modelId === modelId && outcome.finishReason !== 'cancelled') {
+          const { activity: _finished, ...stats } = this.state.stats
+          this.setActivity({ ...this.state, stats: { ...stats, lastRun: outcome } }, true)
+        }
+        return outcome
+      } finally {
+        track(undefined, true)
+        this.armIdleTimer()
+      }
     })
   }
 
@@ -498,6 +673,7 @@ export class LocalModelRuntime {
    */
   async dispose(): Promise<void> {
     this.disposed = true
+    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
     await this.process?.close(this.settings.shutdownGraceMillis())
     this.process = undefined
   }

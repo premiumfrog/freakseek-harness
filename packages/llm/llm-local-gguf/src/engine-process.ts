@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import type { EngineDelta, EngineDevices, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EnginePlacement, EngineStart } from './types.ts'
+import type { EngineDelta, EngineDevices, EngineFailure, EngineGenerateRequest, EngineLoaded, EngineModelFacts, EngineOutcome, EnginePlacement, EngineProgress, EngineStart } from './types.ts'
 
 /** Wire protocol revision this client speaks. */
 export const ENGINE_PROTOCOL_VERSION = 1
@@ -38,6 +38,7 @@ interface Pending {
 type EngineLine =
   | ({ id: string; type: 'start' } & EngineStart)
   | ({ id: string; type: 'delta' } & EngineDelta)
+  | ({ id: string; type: 'progress' } & EngineProgress)
   | { id: string | null; type: 'result'; ok: true; value: unknown }
   | { id: string | null; type: 'result'; ok: false; error: EngineFailure }
 
@@ -53,6 +54,8 @@ export interface EngineLaunch {
 export interface GenerateHandlers {
   onStart(start: EngineStart): void
   onDelta(text: string): void
+  /** Prompt evaluation and generation progress; omitted ignores it. */
+  onProgress?(progress: EngineProgress): void
 }
 
 /**
@@ -158,10 +161,15 @@ export class EngineProcess {
    * @param contextLength - requested context window in tokens.
    * @param slots - KV cache slots the engine keeps.
    * @param placement - compute device and offloaded layer count; `gpuLayers` omitted offloads every layer.
+   * @param onProgress - receives layer-loading progress.
    * @returns loaded model facts.
    */
-  load(path: string, contextLength: number, slots: number, placement: EnginePlacement): Promise<EngineLoaded> {
-    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots, ...placement }).result
+  load(
+    path: string, contextLength: number, slots: number, placement: EnginePlacement, onProgress?: (progress: EngineProgress) => void,
+  ): Promise<EngineLoaded> {
+    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots, ...placement }, (line) => {
+      if (line.type === 'progress') onProgress?.(line)
+    }).result
   }
 
   /**
@@ -184,6 +192,7 @@ export class EngineProcess {
     const { id, result } = this.request<EngineOutcome>({ op: 'generate', ...request }, (line) => {
       if (line.type === 'start') handlers.onStart(line)
       else if (line.type === 'delta') handlers.onDelta(line.text)
+      else if (line.type === 'progress') handlers.onProgress?.(line)
     })
     const cancel = () => { if (this.alive) this.child.stdin.write(`${JSON.stringify({ id: `c${id}`, op: 'cancel', target: id })}\n`) }
     if (signal?.aborted === true) cancel()

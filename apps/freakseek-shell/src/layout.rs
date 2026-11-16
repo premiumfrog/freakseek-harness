@@ -8,6 +8,7 @@
 //!   engine/                GGUF engines (cpu/, cuda/)
 //!   models/                model collections (one subfolder each)
 //!   data/                  conversations, settings, profile, logs (DSH_HOME)
+//!   workspace/             default working folder for conversations without a chosen one
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -24,6 +25,8 @@ pub struct Layout {
     pub data: PathBuf,
     pub profile: PathBuf,
     pub logs: PathBuf,
+    /// Default folder the agent works in when a conversation has no chosen workspace.
+    pub workspace: PathBuf,
 }
 
 impl Layout {
@@ -45,6 +48,7 @@ impl Layout {
             models: root.join("models"),
             profile: data.join("profile"),
             logs: data.join("logs"),
+            workspace: root.join("workspace"),
             data,
         }
     }
@@ -61,7 +65,7 @@ impl Layout {
 
     /// Create the writable folders the runtime expects.
     pub fn prepare(&self) -> std::io::Result<()> {
-        for dir in [&self.models, &self.data, &self.logs] {
+        for dir in [&self.models, &self.data, &self.logs, &self.workspace] {
             std::fs::create_dir_all(dir)?;
         }
         Ok(())

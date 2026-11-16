@@ -6,7 +6,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { LocalModelsActionResult, LocalModelsFileResult, LocalModelsSnapshot } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  LocalModelSettings, LocalModelsActionResult, LocalModelsFileResult, LocalModelsSnapshot, LocalModelsState,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
@@ -22,6 +24,8 @@ export interface LocalModelsPageState {
   error?: string
   /** Chosen and dropped files are copied into the active collection before loading; off loads them in place. */
   copyIntoCollection: boolean
+  /** Load options awaiting confirmation: the model and the surface showing the dialog. */
+  dialog?: { readonly modelId: string; readonly owner: string }
 }
 
 /** Session id as the conversation's model selection takes it. */
@@ -47,6 +51,8 @@ export class LocalModelsController {
   private sequence = 0
   private disposed = false
   private readonly seats = new Set<SeatRegistration>()
+  /** Settles the request that opened the load dialog with the loaded model id, or `undefined` when cancelled. */
+  private settleDialog: ((modelId: string | undefined) => void) | undefined
 
   /** @param ctx - client context carrying `remote`. */
   constructor(private readonly ctx: Context) {}
@@ -82,21 +88,74 @@ export class LocalModelsController {
   }
 
   /**
-   * Load a model and make it the default for new conversations.
+   * Apply a state notice from the Host: load progress, generation progress, or a finished generation's statistics.
+   * @param state - the Host's new engine state.
+   */
+  applyState(state: LocalModelsState): void {
+    if (this.disposed) return
+    this.store.update((draft) => { if (draft.snapshot !== undefined) draft.snapshot = { ...draft.snapshot, state } })
+  }
+
+  /**
+   * Load a model and make it the default for new conversations. A model without saved settings, or one set to ask on
+   * every load, opens the load options dialog on `owner` first.
    * @param modelId - catalog id.
+   * @param owner - surface that shows the dialog.
+   * @returns the loaded model id, or `undefined` when cancelled or failed.
+   */
+  async load(modelId: string, owner = 'section'): Promise<string | undefined> {
+    const model = this.store.getSnapshot().snapshot?.models.find(m => m.id === modelId)
+    if (model?.settings !== undefined && !model.settings.askOnLoad) {
+      const result = await this.act(modelId, () => this.ctx.remote.localModels.load(modelId))
+      return result === undefined ? undefined : modelId
+    }
+    this.settleDialog?.(undefined)
+    this.store.update((draft) => { draft.dialog = { modelId, owner }; delete draft.error })
+    return new Promise((resolve) => { this.settleDialog = resolve })
+  }
+
+  /**
+   * Load the dialog's model with the chosen settings.
+   * @param settings - settings for this load.
+   * @param remember - save them for later loads of this model file.
    * @returns resolves once the Host answered.
    */
-  async load(modelId: string): Promise<void> {
-    await this.act(modelId, () => this.ctx.remote.localModels.load(modelId))
+  async confirmLoad(settings: LocalModelSettings, remember: boolean): Promise<void> {
+    const dialog = this.store.getSnapshot().dialog
+    if (dialog === undefined) return
+    const settle = this.settleDialog
+    this.settleDialog = undefined
+    this.store.update((draft) => { delete draft.dialog })
+    const result = await this.act(dialog.modelId, () => this.ctx.remote.localModels.load(dialog.modelId, { settings, remember }))
+    settle?.(result === undefined ? undefined : dialog.modelId)
+  }
+
+  /** Close the load dialog without loading. */
+  cancelLoad(): void {
+    const settle = this.settleDialog
+    this.settleDialog = undefined
+    this.store.update((draft) => { delete draft.dialog })
+    settle?.(undefined)
+  }
+
+  /**
+   * Save settings for a model without loading it.
+   * @param modelId - catalog id.
+   * @param settings - settings to save.
+   * @returns resolves once the Host answered.
+   */
+  async saveSettings(modelId: string, settings: LocalModelSettings): Promise<void> {
+    await this.act('settings', () => this.ctx.remote.localModels.saveSettings(modelId, settings))
   }
 
   /**
    * Ask the picker for a GGUF file and open it: copied into the active collection, or in place when copying is off.
    * It becomes the default for new conversations.
    * @param picker - the desktop file dialog.
+   * @param owner - surface that shows the load options dialog.
    * @returns the loaded model id, or `undefined` when cancelled or failed (the failure is on the store).
    */
-  async loadFile(picker: ModelFilePicker): Promise<string | undefined> {
+  async loadFile(picker: ModelFilePicker, owner = 'section'): Promise<string | undefined> {
     if (this.store.getSnapshot().pending !== undefined) return undefined
     let path: string | null
     try { path = await picker.pick() }
@@ -105,19 +164,20 @@ export class LocalModelsController {
       return undefined
     }
     if (path === null || this.disposed) return undefined
-    return this.openPath(path)
+    return this.openPath(path, owner)
   }
 
   /**
    * Open a GGUF file path, such as one dropped on the window, the way {@link loadFile} opens a chosen one.
    * @param path - absolute `.gguf` path.
-   * @returns the loaded model id, or `undefined` when failed or another action is in flight.
+   * @param owner - surface that shows the load options dialog.
+   * @returns the loaded model id, or `undefined` when cancelled, failed, or another action is in flight.
    */
-  async openPath(path: string): Promise<string | undefined> {
+  async openPath(path: string, owner = 'section'): Promise<string | undefined> {
     if (this.store.getSnapshot().pending !== undefined) return undefined
     const copy = this.store.getSnapshot().copyIntoCollection && this.store.getSnapshot().snapshot?.collections !== undefined
-    const result = await this.act('file', () => copy ? this.ctx.remote.localModels.importFile(path) : this.ctx.remote.localModels.loadFile(path))
-    return result?.ok === true ? result.modelId : undefined
+    const added = await this.act('file', () => this.ctx.remote.localModels.addFile(path, copy))
+    return added?.ok === true ? this.load(added.modelId, owner) : undefined
   }
 
   /**
@@ -184,5 +244,7 @@ export class LocalModelsController {
   /** Ignore answers arriving after deactivation. */
   dispose(): void {
     this.disposed = true
+    this.settleDialog?.(undefined)
+    this.settleDialog = undefined
   }
 }

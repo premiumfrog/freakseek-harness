@@ -15,7 +15,8 @@ const model = {
   supported: true, parameterCount: 7e9, tools: true, reasoning: false,
 }
 const idle = { state: { kind: 'idle' }, directories: ['/m'], models: [model], problems: [] }
-const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0, stats: { gpuExperts: 0, experts: 0, vramTotalBytes: null, vramFreeBytes: null, loadMs: 1 } } }
+const stats = { gpuExperts: 0, experts: 0, vramTotalBytes: null, vramFreeBytes: null, loadMs: 1 }
+const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0, stats } }
 const collected = {
   ...idle, collections: { root: '/m', active: '', items: [{ id: '', modelCount: 1 }, { id: 'coding', modelCount: 0 }] },
 }
@@ -35,10 +36,16 @@ async function bench(picker?: { pick: () => Promise<string | null> }, first: obj
   type Selection = { sessionId: string; provider: string; model: string }
   const selectModel = vi.fn((_request: Selection) => Promise.resolve({ ok: true, value: undefined }))
   const importFile = vi.fn((_path: string) => Promise.resolve({ ok: true, value: { ok: true, modelId: 'coding/m', snapshot: loaded } }))
+  // Copying lands in the active collection; listing in place keeps the file's own path as its id.
+  const addFile = vi.fn((path: string, copy: boolean) => Promise.resolve({
+    ok: true, value: { ok: true, modelId: copy ? 'coding/m' : `file:${path.replace(/\.gguf$/u, '')}`, snapshot: first },
+  }))
+  const saveSettings = vi.fn((_id: string, _settings: object) => Promise.resolve({ ok: true, value: { ok: true, snapshot: first } }))
   const setActiveCollection = vi.fn((_id: string) => Promise.resolve({ ok: true, value: { ok: true, snapshot: collected } }))
   const createCollection = vi.fn((_name: string) => Promise.resolve({ ok: true, value: { ok: true, snapshot: collected } }))
   const remote = new TestRemote(ctx, {
-    localModels: { snapshot, load, loadFile, importFile, setActiveCollection, createCollection, unload }, session: { selectModel },
+    localModels: { snapshot, load, loadFile, importFile, addFile, saveSettings, setActiveCollection, createCollection, unload },
+    session: { selectModel },
   })
   const slots = ctx.get('slots') as SlotRegistry
   slots.register({ name: 'root', children: {
@@ -49,7 +56,9 @@ async function bench(picker?: { pick: () => Promise<string | null> }, first: obj
   const entry = slots.entries('settings.section')[0]!
   const face = (entry.inject as () => LocalModelsSectionInjected)()
   return {
-    ctx, entry, face, snapshot, load, loadFile, importFile, setActiveCollection, createCollection, unload, selectModel, remote, slots,
+    ctx, entry, face, snapshot, load, loadFile, importFile, addFile, saveSettings, setActiveCollection, createCollection, unload,
+    selectModel,
+    remote, slots,
   }
 }
 
@@ -78,14 +87,40 @@ describe('ui-settings-local-models apply', () => {
     await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(2) })
   })
 
-  it('shows the loaded state after load and the reason after a failed unload', async () => {
+  it('asks for load options, then shows the loaded state and the reason after a failed unload', async () => {
     const { face, load } = await bench()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toBeDefined() })
     face.load('qwen/q')
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toEqual({ modelId: 'qwen/q', owner: 'section' }) })
+    expect(load).not.toHaveBeenCalled()
+    face.confirmLoad({ askOnLoad: false, contextLength: 65536 }, true)
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot?.state).toEqual(loaded.state) })
-    expect(load).toHaveBeenCalledWith('qwen/q')
+    expect(load).toHaveBeenCalledWith('qwen/q', { settings: { askOnLoad: false, contextLength: 65536 }, remember: true })
+    expect(face.hooks.models.getSnapshot().dialog).toBeUndefined()
     expect(face.hooks.models.getSnapshot().pending).toBeUndefined()
     face.unload()
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('host gone') })
+  })
+
+  it('loads a model with saved settings directly, and a cancelled dialog loads nothing', async () => {
+    const remembered = { ...idle, models: [{ ...model, settings: { askOnLoad: false, contextLength: 8192 } }, { ...model, id: 'other' }] }
+    const { face, load } = await bench(undefined, remembered)
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toBeDefined() })
+    face.load('qwen/q')
+    await vi.waitFor(() => { expect(load).toHaveBeenCalledWith('qwen/q') })
+    face.load('other')
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog?.modelId).toBe('other') })
+    face.cancelLoad()
+    expect(face.hooks.models.getSnapshot().dialog).toBeUndefined()
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies live state notices without rereading the catalog', async () => {
+    const { face, snapshot, remote } = await bench()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toBeDefined() })
+    remote.emit('local-models/state', [{ kind: 'loading', modelId: 'qwen/q', layersLoaded: 3, layers: 10 }])
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot?.state).toMatchObject({ kind: 'loading', layersLoaded: 3 }) })
+    expect(snapshot).toHaveBeenCalledTimes(1)
   })
 
   it('offers no file flows outside the desktop app', async () => {
@@ -96,30 +131,38 @@ describe('ui-settings-local-models apply', () => {
 
   it('loads a file chosen in the desktop dialog and switches the conversation to it', async () => {
     const pick = vi.fn<() => Promise<string | null>>().mockResolvedValueOnce('/picked/m.gguf').mockResolvedValueOnce(null)
-    const { face, slots, loadFile, selectModel } = await bench({ pick })
+    const { face, slots, addFile, load, selectModel } = await bench({ pick })
     await vi.waitFor(() => { expect(slots.entries('conversation.input.model')).toHaveLength(1) })
     const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
+    expect(seat.owner).toBe('seat:session-1')
     seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toEqual({ modelId: 'file:/picked/m', owner: 'seat:session-1' }) })
+    expect(addFile).toHaveBeenCalledWith('/picked/m.gguf', false)
+    seat.confirmLoad({ askOnLoad: true }, false)
     await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-1', provider: 'local', model: 'file:/picked/m' }) })
-    expect(loadFile).toHaveBeenCalledWith('/picked/m.gguf')
+    expect(load).toHaveBeenCalledWith('file:/picked/m', { settings: { askOnLoad: true }, remember: false })
     expect(face.hooks.models.getSnapshot()).toMatchObject({ snapshot: loaded })
-    // A cancelled dialog changes nothing.
+    // A cancelled file dialog changes nothing.
     face.loadFile?.()
     await vi.waitFor(() => { expect(pick).toHaveBeenCalledTimes(2) })
-    expect(loadFile).toHaveBeenCalledTimes(1)
+    expect(addFile).toHaveBeenCalledTimes(1)
   })
 
   it('shows the reason when the file cannot load or the conversation cannot switch', async () => {
     const pick = vi.fn(() => Promise.resolve('/picked/m.gguf'))
-    const { slots, loadFile, selectModel, face } = await bench({ pick })
+    const { slots, load, selectModel, face } = await bench({ pick })
     await vi.waitFor(() => { expect(slots.entries('conversation.input.model')).toHaveLength(1) })
     const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
-    loadFile.mockResolvedValueOnce({ ok: true, value: { ok: false, reason: 'unsupported architecture', snapshot: idle } } as never)
+    load.mockResolvedValueOnce({ ok: true, value: { ok: false, reason: 'unsupported architecture', snapshot: idle } } as never)
     seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toBeDefined() })
+    seat.confirmLoad({ askOnLoad: true }, false)
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('unsupported architecture') })
     expect(selectModel).not.toHaveBeenCalled()
     selectModel.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'session busy', {}) } as never)
     seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toBeDefined() })
+    seat.confirmLoad({ askOnLoad: true }, false)
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().error).toBe('session busy') })
     pick.mockRejectedValueOnce(new Error('dialog failed'))
     face.loadFile?.()
@@ -141,16 +184,17 @@ describe('ui-settings-local-models apply', () => {
 
   it('copies a chosen file into the active collection, or loads it in place when copying is off', async () => {
     const pick = vi.fn<() => Promise<string | null>>().mockResolvedValue('/picked/m.gguf')
-    const { face, slots, loadFile, importFile, selectModel } = await bench({ pick }, collected)
+    const { face, slots, addFile, selectModel } = await bench({ pick }, collected)
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toMatchObject({ collections: { active: '' } }) })
     const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-1')
     seat.pick()
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toBeDefined() })
+    seat.confirmLoad({ askOnLoad: true }, false)
     await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-1', provider: 'local', model: 'coding/m' }) })
-    expect(importFile).toHaveBeenCalledWith('/picked/m.gguf')
+    expect(addFile).toHaveBeenCalledWith('/picked/m.gguf', true)
     seat.setCopy(false)
     seat.pick()
-    await vi.waitFor(() => { expect(loadFile).toHaveBeenCalledWith('/picked/m.gguf') })
-    expect(importFile).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => { expect(addFile).toHaveBeenCalledWith('/picked/m.gguf', false) })
   })
 
   it('switches and creates collections from the composer seat', async () => {
@@ -167,13 +211,15 @@ describe('ui-settings-local-models apply', () => {
     const target = new EventTarget()
     vi.stubGlobal('addEventListener', target.addEventListener.bind(target))
     vi.stubGlobal('removeEventListener', target.removeEventListener.bind(target))
-    const { slots, importFile, selectModel, face } = await bench({ pick: () => Promise.resolve(null) }, collected)
+    const { slots, addFile, selectModel, face } = await bench({ pick: () => Promise.resolve(null) }, collected)
     await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().snapshot).toMatchObject({ collections: { active: '' } }) })
     const seat = (slots.entries('conversation.input.model')[0]!.inject as (sessionId: string) => ModelFileButtonInjected)('session-2')
     const release = seat.register(() => true)
     target.dispatchEvent(new CustomEvent('freakseek:gguf-dropped', { detail: { paths: ['/notes.txt', '/dropped/m.gguf'] } }))
+    await vi.waitFor(() => { expect(face.hooks.models.getSnapshot().dialog).toEqual({ modelId: 'coding/m', owner: 'seat:session-2' }) })
+    seat.confirmLoad({ askOnLoad: true }, false)
     await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledWith({ sessionId: 'session-2', provider: 'local', model: 'coding/m' }) })
-    expect(importFile).toHaveBeenCalledWith('/dropped/m.gguf')
+    expect(addFile).toHaveBeenCalledWith('/dropped/m.gguf', true)
     release()
   })
 })

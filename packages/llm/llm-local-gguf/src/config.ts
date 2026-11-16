@@ -64,6 +64,10 @@ export interface Config {
   shutdownGraceMillis: number
   /** JSON list of GGUF files loaded from outside the model directories; omitted resolves to `$DSH_HOME/local-models/imported.json`. */
   importedModelsFile?: string
+  /** Load the model loaded last in the previous run when the provider starts, so the first message does not wait for it. */
+  autoLoadLast: boolean
+  /** Minutes without a generation after which the loaded model is released; 0 keeps it loaded. */
+  idleUnloadMinutes: Volatile<number>
 }
 
 export const Config = z.object({
@@ -84,6 +88,8 @@ export const Config = z.object({
   repeatPenalty: z.number().min(0.5).max(3).volatile(),
   constrainToolCalls: z.boolean().default(true).volatile(),
   hiddenToolProperties: z.array(z.string()).default(['timeoutMs']).volatile(),
+  autoLoadLast: z.boolean().default(false),
+  idleUnloadMinutes: z.number().step(1).min(0).max(10_080).default(30).volatile(),
   thinking: z.boolean().volatile(),
   shutdownGraceMillis: z.number().step(1).min(0).max(60_000).default(3000),
   importedModelsFile: z.string(),
@@ -229,6 +235,15 @@ export function samplingOf(config: Config, facts?: SamplingModelFacts): EngineSa
  */
 export function placementOf(config: Config): EnginePlacement {
   return config.gpuLayers === undefined ? { device: config.device } : { device: config.device, gpuLayers: config.gpuLayers }
+}
+
+/**
+ * Resolve the per-model settings file, kept beside the imported-models list.
+ * @param importsFile - resolved imported-models list.
+ * @returns the absolute file path.
+ */
+export function resolveModelSettingsFile(importsFile: string): string {
+  return join(dirname(importsFile), 'model-settings.json')
 }
 
 /**

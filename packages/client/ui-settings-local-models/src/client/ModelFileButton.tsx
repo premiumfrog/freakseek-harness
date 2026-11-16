@@ -9,7 +9,10 @@ import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconDataOutlineRegular, MenuSurface, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { LocalModelSettings, LocalModelsState } from '@deepseek-ai/dsh-api-remotes/client'
 import type { LocalModelsPageState } from './controller.ts'
+import { LoadOptionsDialog } from './LoadOptionsDialog.tsx'
+import type { LocalModelsLocaleKey } from './locales.ts'
 import css from './ModelFileButton.module.css'
 
 /** Registration-side face of the seat. */
@@ -18,8 +21,14 @@ export type ModelFileButtonInjected = {
     /** Page state store shared with the settings section. */
     models: HostObservable<LocalModelsPageState>
   }
+  /** This seat's id for the load options dialog. */
+  owner: string
   /** Open the file dialog, load the chosen file, and select it for this conversation. */
   pick: () => void
+  /** Load the dialog's model with the chosen settings, saving them when `remember` is set. */
+  confirmLoad: (settings: LocalModelSettings, remember: boolean) => void
+  /** Close the load options dialog without loading. */
+  cancelLoad: () => void
   /** Make a collection active; `''` is the models folder itself. */
   setCollection: (id: string) => void
   /** Create a collection and make it active; resolves to whether it was created. */
@@ -36,8 +45,42 @@ export type ModelFileButtonProps =
   & PropsLocale<'settings.localModels'>
   & InjectFace<ModelFileButtonInjected>
 
+/** Token count in k units, for example `3.1k`. */
+function kTokens(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count)
+}
+
+/**
+ * One line of live engine statistics: load progress, prompt progress, generation speed and context use, or the
+ * last reply's figures.
+ * @param state - engine state.
+ * @param t - translate function.
+ * @returns the line, or `undefined` when there is nothing to show.
+ */
+export function liveStats(
+  state: LocalModelsState | undefined,
+  t: (key: LocalModelsLocaleKey, values?: Record<string, string | number>) => string,
+): string | undefined {
+  if (state?.kind === 'loading') {
+    if (state.layers === undefined) return undefined
+    const done = state.layersLoaded ?? 0
+    return t('live.loading', { done, total: state.layers, percent: Math.round(done / Math.max(1, state.layers) * 100) })
+  }
+  if (state?.kind !== 'loaded') return undefined
+  const activity = state.stats.activity
+  if (activity?.stage === 'prefill') return t('live.prefill', { done: kTokens(activity.done), total: kTokens(activity.total) })
+  if (activity?.stage === 'decode') return t('live.decode', { rate: activity.tokensPerSecond.toFixed(1), used: kTokens(activity.contextUsed), total: kTokens(state.contextLength) })
+  const last = state.stats.lastRun
+  if (last === undefined) return undefined
+  return t(last.finishReason === 'repetition' ? 'live.repetition' : 'live.last', {
+    rate: last.tokensPerSecond.toFixed(1), used: kTokens(last.promptTokens + last.completionTokens), total: kTokens(state.contextLength),
+  })
+}
+
 /** Render the seat. */
-export function ModelFileButton({ t, locked, useModels, pick, setCollection, createCollection, setCopy, register }: ModelFileButtonProps) {
+export function ModelFileButton({
+  t, locked, useModels, owner, pick, confirmLoad, cancelLoad, setCollection, createCollection, setCopy, register,
+}: ModelFileButtonProps) {
   const page = useModels(value => value)
   const root = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -61,6 +104,9 @@ export function ModelFileButton({ t, locked, useModels, pick, setCollection, cre
   const label = busy ? t('picker.loading') : loaded?.name ?? (loadedId === undefined ? t('picker.choose') : loadedId)
   const title = page.error !== undefined ? t('picker.failed', { reason: page.error }) : loadedId === undefined ? t('picker.choose') : t('picker.loaded', { model: loaded?.name ?? loadedId })
   const collections = page.snapshot?.collections
+  const stats = liveStats(state, t)
+  const repeated = state?.kind === 'loaded' && state.stats.activity === undefined && state.stats.lastRun?.finishReason === 'repetition'
+  const dialogModel = page.dialog?.owner === owner ? page.snapshot?.models.find(model => model.id === page.dialog?.modelId) : undefined
   const collectionName = (id: string) => id === '' ? t('collection.default') : id
   const submit = () => {
     void createCollection(name).then((created) => { if (created) { setName(''); setNaming(false); setOpen(false) } })
@@ -143,6 +189,10 @@ export function ModelFileButton({ t, locked, useModels, pick, setCollection, cre
         <span className={css.label}>{label}</span>
         {busy && <StateDot state="ongoing" />}
       </button>
+      {stats !== undefined && <span className={css.stats} data-warning={repeated ? 'true' : undefined}>{stats}</span>}
+      {dialogModel !== undefined && (
+        <LoadOptionsDialog t={t} model={dialogModel} engine={page.snapshot?.engine} onCancel={cancelLoad} onLoad={confirmLoad} />
+      )}
     </div>
   )
 }

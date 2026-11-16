@@ -104,11 +104,16 @@ describe('TodoPanel', () => {
   })
 })
 
-/** Dock props stub: the adapter reads the 'todos' projection only; the rest of the owner share is unused. */
-function dockProps(store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>): TodoDockProps {
+/** Dock props stub: the adapter reads the 'todos' projection and the session's running state; the rest is unused. */
+function dockProps(
+  store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>,
+  status = createSnapshotStore<{ running: boolean | undefined }>({ running: true }),
+): TodoDockProps {
   const useProjection = (_key: string, selector?: (v: unknown) => unknown) =>
     bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))
-  return { useProjection, t } as unknown as TodoDockProps
+  const useSessionStatus = (selector: (statuses: Map<string, { running: boolean | undefined }>) => unknown) =>
+    bindSnapshotSelector(status)(s => selector(new Map([['s1', { running: s.running }]])))
+  return { useProjection, useSessionStatus, sessionId: 's1', t } as unknown as TodoDockProps
 }
 
 describe('TodoDock', () => {
@@ -122,6 +127,20 @@ describe('TodoDock', () => {
     // The pre-first-write whole value (null) retires the strip (the panel owns no data).
     act(() => { store.set({ value: null }) })
     expect(screen.queryByTestId('todo-panel')).toBeNull()
+  })
+
+  it('shows an in-progress item as stopped while the session is not running', () => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const status = createSnapshotStore<{ running: boolean | undefined }>({ running: true })
+    render(<TodoDock {...dockProps(store, status)} />)
+    expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
+    act(() => { status.set({ running: false }) })
+    expect(screen.getByText('1 已完成 · 1 已停止 · 1 待处理')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(screen.getByRole('img', { name: '已停止（智能体未运行）' })).toBeTruthy()
+    // An unknown running state keeps the plan as written.
+    act(() => { status.set({ running: undefined }) })
+    expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
   })
 
   it('registers before the goal and queue entries', () => {

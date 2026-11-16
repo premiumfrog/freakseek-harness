@@ -4,6 +4,20 @@
  * @module dsh-llm-local-gguf/types
  */
 
+import type {} from '@deepseek-ai/cordis'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * The local engine's state changed without a catalog change: load progress, generation progress, or a finished
+     * generation's statistics. Sent at most four times a second; catalog changes still arrive as `llm/models-updated`.
+     * @mode emit
+     * @param state - the new state.
+     */
+    'local-models/state'(state: LocalModelsState): void
+  }
+}
+
 /** Header facts the engine reads from one GGUF file. */
 export interface EngineModelFacts {
   readonly path: string
@@ -25,6 +39,16 @@ export interface EngineModelFacts {
   readonly templateTools: boolean
   /** The chat template references `<think>` reasoning blocks. */
   readonly templateReasoning: boolean
+  /** Decoder layers; `null` for an unsupported file. */
+  readonly layers: number | null
+  readonly attentionLayers: number | null
+  readonly experts: number | null
+  readonly expertsUsed: number | null
+  readonly kvBytesPerToken: number | null
+  readonly stateBytes: number | null
+  readonly hasMtp: boolean
+  /** `[type, bytes]` pairs, largest first. */
+  readonly weightTypes: readonly (readonly [string, number])[]
 }
 
 /** Compute placement requested at load. */
@@ -79,8 +103,14 @@ export interface EngineDelta {
   readonly text: string
 }
 
-/** Why the engine stopped. */
-export type EngineFinishReason = 'stop' | 'length' | 'cancelled'
+/** Progress of a load or a generation. */
+export type EngineProgress =
+  | { readonly stage: 'load'; readonly done: number; readonly total: number }
+  | { readonly stage: 'prefill'; readonly done: number; readonly total: number }
+  | { readonly stage: 'decode'; readonly done: number; readonly tokensPerSecond: number; readonly contextUsed: number }
+
+/** Why the engine stopped; `repetition` means the output settled into a short repeated cycle. */
+export type EngineFinishReason = 'stop' | 'length' | 'cancelled' | 'repetition'
 
 /** Terminal result of a generation. */
 export interface EngineOutcome {
@@ -108,6 +138,8 @@ export interface LocalModelLoadStats {
   readonly warning?: string
   /** The most recent finished generation; absent until one finishes. */
   readonly lastRun?: EngineOutcome
+  /** The generation in progress; absent while idle. */
+  readonly activity?: EngineProgress
 }
 
 /** OpenAI-style message the engine passes to the model's chat template. */
@@ -159,6 +191,44 @@ export interface EngineGenerateRequest {
   readonly toolGrammar: boolean
 }
 
+/** Settings saved for one model file, applied whenever it loads. Omitted fields use the plugin configuration. */
+export interface LocalModelSettings {
+  /** Show the load options before loading this model, even when settings are saved. */
+  readonly askOnLoad: boolean
+  /** Context window in tokens; clamped to the trained length. */
+  readonly contextLength?: number
+  /** Trailing layers placed on the GPU; omitted lets the engine place every layer or fill VRAM with experts. */
+  readonly gpuLayers?: number
+  readonly temperature?: number
+  readonly topP?: number
+  readonly topK?: number
+  /** Reasoning switch passed to the chat template. */
+  readonly thinking?: boolean
+}
+
+/** Load request from a configuration surface: settings for this load, optionally saved for later loads. */
+export interface LocalModelLoadOptions {
+  readonly settings?: LocalModelSettings
+  /** Save `settings` for this model file. */
+  readonly remember?: boolean
+}
+
+/** Model structure from the GGUF header, for model cards and memory estimates. */
+export interface LocalModelStructure {
+  readonly layers: number
+  readonly attentionLayers: number
+  readonly experts: number
+  readonly expertsUsed: number
+  /** KV cache bytes per context position with F16 keys and values. */
+  readonly kvBytesPerToken: number
+  /** Fixed recurrent-state bytes per sequence. */
+  readonly stateBytes: number
+  /** The file carries multi-token-prediction layers, which are not run. */
+  readonly hasMtp: boolean
+  /** Weight bytes by type, largest first. */
+  readonly weightTypes: readonly (readonly [string, number])[]
+}
+
 /** One model file offered by the catalog. */
 export interface LocalModelEntry {
   /** Stable model id used in requests: the file path relative to its model directory, without `.gguf`. */
@@ -178,13 +248,17 @@ export interface LocalModelEntry {
   readonly reasoning: boolean
   /** Collection holding the file (`''` for the models root); absent for imported files and explicit directories. */
   readonly collection?: string
+  /** Header structure; absent for files the engine cannot read. */
+  readonly structure?: LocalModelStructure
+  /** Saved settings; absent when none are saved. */
+  readonly settings?: LocalModelSettings
 }
 
 /** Engine and loaded-model state reported to configuration surfaces. */
 export type LocalModelsState =
   | { readonly kind: 'engine-unavailable'; readonly reason: string }
   | { readonly kind: 'idle' }
-  | { readonly kind: 'loading'; readonly modelId: string }
+  | { readonly kind: 'loading'; readonly modelId: string; readonly layersLoaded?: number; readonly layers?: number }
   | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number; readonly device: string; readonly gpuLayers: number; readonly stats: LocalModelLoadStats }
   | { readonly kind: 'failed'; readonly modelId: string; readonly reason: string }
 

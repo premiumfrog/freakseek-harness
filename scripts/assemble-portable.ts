@@ -230,6 +230,10 @@ GPU
   NVIDIA RTX 20-series and newer run models on the GPU automatically with a
   current NVIDIA driver; other PCs use the CPU engine.
 
+Workspaces
+  The agent works in the folder you choose for a conversation and asks before
+  changing files outside it. Without a chosen folder it works in "workspace".
+
 Your data
   Conversations, settings, and logs are kept in the "data" folder next to this
   file. Copy the whole FreakSeek folder to move or back up everything.
@@ -262,6 +266,8 @@ function main(): void {
 
   mkdirSync(join(opts.out, 'models'), { recursive: true })
   writeFileSync(join(opts.out, 'models', '.keep'), '')
+  mkdirSync(join(opts.out, 'workspace'), { recursive: true })
+  writeFileSync(join(opts.out, 'workspace', '.keep'), '')
   cliLaunchers(opts.out)
   writeFileSync(join(opts.out, 'README-FIRST.txt'), opts.platform === 'win32' ? README.replaceAll('\n', '\r\n') : README)
   console.log(`assemble-portable: ${opts.out} (${String(linked)} workspace packages materialized)`)

@@ -18,6 +18,8 @@ export interface TodoPanelProps {
   todos: readonly TodoItem[]
   /** The dock entry's locale seat, passed down as a plain prop. */
   t: TodoDockProps['t']
+  /** The session is not running, so an in-progress item is stopped rather than advancing. */
+  stopped?: boolean
 }
 
 /** Local exhaustiveness helper — client packages do not depend on `dsh-llm`. */
@@ -27,10 +29,10 @@ function assertNever(value: never): never {
 }
 
 /** Map Todo lifecycle state onto the shared compact status language. */
-function statusDotState(status: TodoItem['status']): StateDotState {
+function statusDotState(status: TodoItem['status'], stopped: boolean): StateDotState {
   switch (status) {
     case 'completed': return 'done'
-    case 'in_progress': return 'ongoing'
+    case 'in_progress': return stopped ? 'idle' : 'ongoing'
     case 'pending': return 'idle'
     /* v8 ignore next -- closed TodoItem status union */
     default: return assertNever(status)
@@ -38,10 +40,10 @@ function statusDotState(status: TodoItem['status']): StateDotState {
 }
 
 /** Return the localized status announced beside one decorative marker. */
-function statusLabel(status: TodoItem['status'], t: TodoPanelProps['t']): string {
+function statusLabel(status: TodoItem['status'], t: TodoPanelProps['t'], stopped: boolean): string {
   switch (status) {
     case 'completed': return t('todo.status.completed')
-    case 'in_progress': return t('todo.status.inProgress')
+    case 'in_progress': return stopped ? t('todo.status.stopped') : t('todo.status.inProgress')
     case 'pending': return t('todo.status.pending')
     /* v8 ignore next -- closed TodoItem status union */
     default: return assertNever(status)
@@ -49,7 +51,7 @@ function statusLabel(status: TodoItem['status'], t: TodoPanelProps['t']): string
 }
 
 /** Header summary: "·"-joined per-status counts; zero-count segments are omitted as noise (a non-empty list keeps at least one). */
-function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t']): string {
+function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t'], stopped: boolean): string {
   const done = todos.filter(item => item.status === 'completed').length
   const active = todos.filter(item => item.status === 'in_progress').length
   const pending = todos.length - done - active
@@ -57,12 +59,12 @@ function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t']): stri
   // separator breathing room needs a literal wide space.
   return [
     ...done > 0 ? [t('todo.progress.done', { done })] : [],
-    ...active > 0 ? [t('todo.progress.active', { active })] : [],
+    ...active > 0 ? [stopped ? t('todo.progress.stopped', { active }) : t('todo.progress.active', { active })] : [],
     ...pending > 0 ? [t('todo.progress.pending', { pending })] : [],
   ].join('\u2002·\u2002')
 }
 
-export function TodoPanel({ todos, t }: TodoPanelProps) {
+export function TodoPanel({ todos, t, stopped = false }: TodoPanelProps) {
   const [collapsed, setCollapsed] = useState(true)
   if (todos.length === 0) return null
 
@@ -77,7 +79,7 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
         >
           <span className={css.lead} aria-hidden><IconChecklistOutlineRegular /></span>
           <span className={css.title}>{t('todo.title')}</span>
-          <span className={css.progress}>{progressLabel(todos, t)}</span>
+          <span className={css.progress}>{progressLabel(todos, t, stopped)}</span>
           <span className={css.chevron} aria-hidden>
             {collapsed ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
           </span>
@@ -85,9 +87,9 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
         {!collapsed && (
           <ul className={css.list}>
             {todos.map(item => (
-              <li key={item.content} className={css.item} data-status={item.status}>
-                <span className={css.glyph} role="img" aria-label={statusLabel(item.status, t)}>
-                  <StateDot state={statusDotState(item.status)} />
+              <li key={item.content} className={css.item} data-status={item.status} data-stopped={stopped && item.status === 'in_progress' ? 'true' : undefined}>
+                <span className={css.glyph} role="img" aria-label={statusLabel(item.status, t, stopped)}>
+                  <StateDot state={statusDotState(item.status, stopped)} />
                 </span>
                 <span className={css.content}>{item.content}</span>
               </li>
@@ -103,9 +105,11 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
 export type TodoDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'conversation'>
 
 /** Renders the current todo projection, or nothing when it is absent. */
-export function TodoDock({ useProjection, t }: TodoDockProps) {
+export function TodoDock({ useProjection, useSessionStatus, sessionId, t }: TodoDockProps) {
   const todos = useProjection('todos')
-  return <TodoPanel todos={todos ?? []} t={t} />
+  // A stopped or cancelled turn leaves its plan's in-progress item unfinished; only a running session advances it.
+  const running = useSessionStatus(statuses => statuses.get(sessionId)?.running)
+  return <TodoPanel todos={todos ?? []} t={t} stopped={running === false} />
 }
 
 /** Registers the projected todo dock. */

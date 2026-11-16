@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use candle_core::quantized::gguf_file::Content;
-use candle_core::quantized::{ggml_file::qtensor_from_ggml, QMatMul, QTensor};
+use candle_core::quantized::{ggml_file::qtensor_from_ggml, GgmlDType, QMatMul, QTensor};
 use candle_core::{DType, Device, Module, Tensor};
 
 use crate::device::{ensure_kernels, Placement};
@@ -24,6 +24,8 @@ use crate::recurrent::{DeltaDims, DeltaNet, RecState};
 
 /// Recurrent-state checkpoints kept per sequence.
 const MAX_CHECKPOINTS: usize = 8;
+/// Elements above which a floating-point weight matrix is stored as Q8_0.
+const LARGE_FLOAT_MATRIX: usize = 1 << 24;
 /// Decoded tokens between automatic checkpoints.
 const CHECKPOINT_INTERVAL: usize = 128;
 
@@ -59,9 +61,28 @@ pub struct Hparams {
     /// Per layer, whether it is a gated delta-net layer.
     recurrent: Vec<bool>,
     delta: Option<DeltaDims>,
-    n_expert: usize,
-    n_expert_used: usize,
+    pub n_expert: usize,
+    pub n_expert_used: usize,
     expert_scale: f32,
+}
+
+impl Hparams {
+    /// Layers that keep a KV cache.
+    pub fn attention_layers(&self) -> usize {
+        self.recurrent.iter().filter(|r| !**r).count()
+    }
+
+    /// KV cache bytes per context position with half-precision keys and values.
+    pub fn kv_bytes_per_token(&self) -> u64 {
+        (self.attention_layers() * 2 * self.n_head_kv * self.head_dim * 2) as u64
+    }
+
+    /// Recurrent state bytes per sequence: convolution windows and state matrices.
+    pub fn state_bytes(&self) -> u64 {
+        let Some(d) = self.delta else { return 0 };
+        let per_layer = (d.kernel - 1) * (2 * d.head_dim * d.k_heads + d.head_dim * d.v_heads) + d.v_heads * d.head_dim * d.head_dim;
+        (self.recurrent.iter().filter(|r| **r).count() * per_layer * 4) as u64
+    }
 }
 
 struct Linear {
@@ -361,8 +382,17 @@ impl Loader<'_> {
         let t = self.c.tensor(&mut self.r, name, &Device::Cpu).with_context(|| format!("missing tensor `{name}`"))?;
         Ok(t.dequantize(&Device::Cpu)?.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?)
     }
+    /// A weight matrix. Large half- and single-precision matrices, such as a BF16 output head, are
+    /// stored as Q8_0: candle would otherwise expand them to F32, four times their size in the file.
     fn mm(&mut self, name: &str) -> Result<QMatMul> {
-        Ok(QMatMul::from_qtensor(self.q(name)?)?)
+        let t = self.q(name)?;
+        let float = matches!(t.dtype(), GgmlDType::F16 | GgmlDType::BF16 | GgmlDType::F32);
+        let dims = t.shape().dims().to_vec();
+        if float && dims.len() == 2 && dims[0] * dims[1] >= LARGE_FLOAT_MATRIX && dims[1] % GgmlDType::Q8_0.block_size() == 0 {
+            let host = self.c.tensor(&mut self.r, name, &Device::Cpu)?.dequantize(&Device::Cpu)?;
+            return Ok(QMatMul::from_qtensor(QTensor::quantize_onto(&host, GgmlDType::Q8_0, &self.dev)?)?);
+        }
+        Ok(QMatMul::from_qtensor(t)?)
     }
     fn linear(&mut self, prefix: &str) -> Result<Linear> {
         let w = self.mm(&format!("{prefix}.weight"))?;
@@ -422,6 +452,12 @@ impl Model {
     /// @param content - header parsed from the same file.
     /// @param placement - devices for the layers and output head.
     pub fn load(path: &Path, content: &Content, placement: &Placement) -> Result<Self> {
+        Self::load_with_progress(path, content, placement, &mut |_, _| {})
+    }
+
+    /// [`Model::load`], reporting each loaded layer.
+    /// @param progress - called with `(layers loaded, total layers)` after each layer.
+    pub fn load_with_progress(path: &Path, content: &Content, placement: &Placement, progress: &mut dyn FnMut(usize, usize)) -> Result<Self> {
         let hp = hparams(content)?;
         let cpu = Device::Cpu;
         let mut l = Loader { c: content, r: BufReader::new(File::open(path)?), dev: cpu.clone() };
@@ -536,6 +572,7 @@ impl Model {
                 Ffn::Dense { gate: l.mm(&p("ffn_gate.weight"))?, up: l.mm(&p("ffn_up.weight"))?, down: l.mm(&p("ffn_down.weight"))? }
             };
             layers.push(Layer { dev: l.dev.clone(), attn_norm, mixer, ffn_norm, ffn });
+            progress(i + 1, hp.n_layer);
         }
         let half = hp.n_rot / 2;
         let mut inv_freq: Vec<f32> = (0..half).map(|i| 1.0 / hp.rope_base.powf((2 * i) as f32 / hp.n_rot as f32)).collect();
@@ -798,13 +835,15 @@ fn attend(hp: &Hparams, a: &Attn, h: &Tensor, cache: &mut KvCache, cos: &Tensor,
     };
     let q = rotate(hp, &q.transpose(1, 2)?.contiguous()?, cos, sin)?;
     let k = rotate(hp, &k.transpose(1, 2)?.contiguous()?, cos, sin)?;
-    let (k, v) = cache.append(&k, &v)?;
+    // On a GPU the cache holds half-precision keys and values, halving the memory a long context needs.
+    let kv_dtype = if h.device().is_cpu() { DType::F32 } else { DType::F16 };
+    let (k, v) = cache.append(&k.to_dtype(kv_dtype)?, &v.to_dtype(kv_dtype)?)?;
     let total = k.dim(2)?;
     // Grouped-query attention: fold query heads per KV head instead of copying K/V.
-    let q = q.reshape((1, hp.n_head_kv, groups * t, hp.head_dim))?;
+    let q = q.reshape((1, hp.n_head_kv, groups * t, hp.head_dim))?.to_dtype(kv_dtype)?;
     // The cached keys and values are strided views of the cache buffers; copying them would cost a pass
     // over the whole context per layer per token.
-    let att = (q.matmul(&k.t()?)? * scale)?;
+    let att = (q.matmul(&k.t()?)?.to_dtype(DType::F32)? * scale)?;
     let att = match mask {
         Some(m) => {
             let att = att.reshape((1, hp.n_head_kv, groups, t, total))?;
@@ -812,8 +851,8 @@ fn attend(hp: &Hparams, a: &Attn, h: &Tensor, cache: &mut KvCache, cos: &Tensor,
         }
         None => att,
     };
-    let att = candle_nn::ops::softmax_last_dim(&att)?;
-    let y = att.matmul(&v)?;
+    let att = candle_nn::ops::softmax_last_dim(&att)?.to_dtype(kv_dtype)?;
+    let y = att.matmul(&v)?.to_dtype(DType::F32)?;
     let y = y.reshape((1, hp.n_head, t, hp.head_dim))?.transpose(1, 2)?.reshape((1, t, hp.n_head * hp.head_dim))?;
     let y = match gate {
         Some(g) => (y * candle_nn::ops::sigmoid(&g)?)?,

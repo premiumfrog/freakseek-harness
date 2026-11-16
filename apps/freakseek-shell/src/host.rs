@@ -65,7 +65,9 @@ impl Host {
             .arg(&layout.host_entry)
             .arg(&layout.runtime_app)
             .arg(&layout.profile)
-            .current_dir(&layout.root)
+            // The runtime's directory is the default workspace, so a conversation without a chosen folder works there,
+            // never in the application folder.
+            .current_dir(&layout.workspace)
             .env("FREAKSEEK_SHELL", "stdio")
             .env("DSH_HOME", &layout.data)
             // Agent definitions and memories default to the user profile; keep them in the portable folder.

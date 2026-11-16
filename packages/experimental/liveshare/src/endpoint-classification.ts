@@ -219,6 +219,8 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'localModels/load': 'owner-only', // loads a model into the owner's engine
   'localModels/loadFile': 'owner-only', // imports a file from the owner's disk and loads it
   'localModels/importFile': 'owner-only', // copies a file from the owner's disk into a collection and loads it
+  'localModels/addFile': 'owner-only', // adds a file from the owner's disk to the catalog
+  'localModels/saveSettings': 'owner-only', // saves the owner's per-model settings
   'localModels/createCollection': 'owner-only', // creates a folder in the owner's models root
   'localModels/setActiveCollection': 'owner-only', // switches the owner's model collection
   'localModels/unload': 'owner-only', // releases the owner's loaded model

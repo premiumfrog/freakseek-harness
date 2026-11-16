@@ -175,3 +175,21 @@
   font-size: 13px;
   cursor: pointer;
 }
+
+/* Live engine figures beside the model button: load and prompt progress, generation speed, and context use. */
+.stats {
+  display: var(--dsh-composer-model-text-display, block);
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-dimmed);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats[data-warning] {
+  color: var(--dsw-alias-state-warning-primary);
+}

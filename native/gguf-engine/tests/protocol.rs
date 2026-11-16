@@ -31,10 +31,36 @@ impl Engine {
         self.stdin.flush().unwrap();
     }
 
+    /// Next line other than a progress event; progress is checked by [`Engine::progress_until_result`].
     fn next(&mut self) -> Value {
+        loop {
+            let v = self.raw();
+            if v["type"] != "progress" {
+                return v;
+            }
+        }
+    }
+
+    fn raw(&mut self) -> Value {
         let mut line = String::new();
         self.stdout.read_line(&mut line).unwrap();
         serde_json::from_str(&line).unwrap()
+    }
+
+    /// Read lines until the result for `id`, returning that id's progress events and its result.
+    fn progress_until_result(&mut self, id: &str) -> (Vec<Value>, Value) {
+        let mut progress = Vec::new();
+        loop {
+            let v = self.raw();
+            if v["id"] != id {
+                continue;
+            }
+            match v["type"].as_str() {
+                Some("progress") => progress.push(v),
+                Some("result") => return (progress, v),
+                _ => {}
+            }
+        }
     }
 
     /// Read lines until the result for `id`, returning every line for that id.
@@ -78,9 +104,11 @@ fn load_generate_reuse_cache_and_shutdown() {
     assert_eq!(e.until_result("g0")[0]["error"]["code"], "NO_MODEL");
 
     e.send(json!({"id": "l", "op": "load", "path": path, "contextLength": 512}));
-    let loaded = e.until_result("l");
-    assert_eq!(loaded[0]["ok"], true, "{loaded:?}");
-    assert_eq!(loaded[0]["value"]["contextLength"], 512);
+    let (progress, loaded) = e.progress_until_result("l");
+    assert_eq!(loaded["ok"], true, "{loaded:?}");
+    assert_eq!(loaded["value"]["contextLength"], 512);
+    let last = progress.last().expect("load reports progress");
+    assert_eq!((last["stage"].as_str(), &last["done"], &last["total"]), (Some("load"), &last["total"], &json!(2)));
 
     let request = |id: &str| json!({
         "id": id, "op": "generate", "maxTokens": 6,

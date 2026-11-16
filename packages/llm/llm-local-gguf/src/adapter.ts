@@ -99,7 +99,9 @@ export class LocalGgufAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const tools = engineTools(options, this.settings.hiddenToolProperties())
-    const thinking = this.settings.thinking()
+    // Settings saved for this model file outrank the plugin configuration.
+    const saved = this.runtime.settingsFor(options.model)
+    const thinking = saved?.thinking ?? this.settings.thinking()
     const queue: StreamChunk[] = []
     let wake: (() => void) | undefined
     let parser: OutputParser | undefined
@@ -115,6 +117,9 @@ export class LocalGgufAdapter extends LlmAdapter {
       slot: slotOf(options),
       sampling: {
         ...this.settings.sampling(this.runtime.find(options.model)),
+        ...saved?.temperature === undefined ? {} : { temperature: saved.temperature },
+        ...saved?.topP === undefined ? {} : { topP: saved.topP },
+        ...saved?.topK === undefined ? {} : { topK: saved.topK },
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
       },
       toolGrammar: tools.length > 0 && this.settings.constrainToolCalls(),

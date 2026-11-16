@@ -46,6 +46,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     const disposers = [
       ctx.remote.$on('llm/models-updated', (provider) => { if (provider === 'local') controller.refresh() }),
+      ctx.remote.$on('local-models/state', (state) => { controller.applyState(state) }),
       ctx.on('connection/reset', () => { controller.refresh() }),
     ]
     controller.refresh()
@@ -57,6 +58,8 @@ export function apply(ctx: ClientContext): void {
     hooks: { models: controller.store },
     refresh: () => { controller.refresh() },
     load: (modelId) => { void controller.load(modelId) },
+    confirmLoad: (settings, remember) => { void controller.confirmLoad(settings, remember) },
+    cancelLoad: () => { controller.cancelLoad() },
     ...picker === undefined ? {} : { loadFile: () => { void controller.loadFile(picker) } },
     unload: () => { void controller.unload() },
     setCollection: (id) => { void controller.setActiveCollection(id) },
@@ -76,7 +79,10 @@ export function apply(ctx: ClientContext): void {
         locale: NS,
         inject: (sessionId): ModelFileButtonInjected => ({
           hooks: { models: controller.store },
-          pick: () => { void controller.loadFile(picker).then(modelId => select(sessionId, modelId)) },
+          owner: `seat:${String(sessionId)}`,
+          pick: () => { void controller.loadFile(picker, `seat:${String(sessionId)}`).then(modelId => select(sessionId, modelId)) },
+          confirmLoad: (settings, remember) => { void controller.confirmLoad(settings, remember) },
+          cancelLoad: () => { controller.cancelLoad() },
           setCollection: (id) => { void controller.setActiveCollection(id) },
           createCollection: name => controller.createCollection(name),
           setCopy: (copy) => { controller.setCopyIntoCollection(copy) },
@@ -93,7 +99,8 @@ export function apply(ctx: ClientContext): void {
           const path = paths.find((candidate): candidate is string => typeof candidate === 'string' && /\.gguf$/iu.test(candidate))
           if (path === undefined) return
           const sessionId = controller.visibleSession()
-          void controller.openPath(path).then(modelId => sessionId === undefined ? undefined : select(sessionId, modelId))
+          const owner = sessionId === undefined ? 'section' : `seat:${String(sessionId)}`
+          void controller.openPath(path, owner).then(modelId => sessionId === undefined ? undefined : select(sessionId, modelId))
         }
         globalThis.addEventListener('freakseek:gguf-dropped', onDrop)
         return () => { globalThis.removeEventListener('freakseek:gguf-dropped', onDrop) }

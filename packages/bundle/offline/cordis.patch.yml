@@ -54,6 +54,9 @@
     includeHarnessIdentity: false
     personaPrefix: >-
       You are FreakSeek, a coding agent running on a local model on the user's computer.
+      Work in the session's working directory: create, edit, and run files there.
+      Ask the user before reading, creating, or changing anything outside it,
+      and never inspect or modify FreakSeek's own installation.
 
 # Lean tool surface for one local model. Every declared tool costs prompt
 # tokens on each request, and small models call unfamiliar tools wrongly, so
@@ -105,6 +108,8 @@
         modelDirectories: !!js "process.env.DSH_LOCAL_MODEL_DIRS?.split(process.platform === 'win32' ? ';' : ':')"
         device: !!js process.env.DSH_GGUF_DEVICE
         gpuLayers: !!js "process.env.DSH_GGUF_GPU_LAYERS === undefined ? undefined : Number(process.env.DSH_GGUF_GPU_LAYERS)"
+        # The desktop app reloads the last model at startup; a CLI run loads the one it names.
+        autoLoadLast: !!js process.env.FREAKSEEK_SHELL === 'stdio'
 
     - id: web-search-duckduckgo
       name: '@deepseek-ai/dsh-web-search-duckduckgo'

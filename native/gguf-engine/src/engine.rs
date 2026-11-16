@@ -38,6 +38,43 @@ pub struct ModelFacts {
     pub template_tools: bool,
     /// The template references `<think>` reasoning blocks.
     pub template_reasoning: bool,
+    /// Decoder layers, attention layers among them, and routed experts (total and used per token).
+    pub layers: Option<usize>,
+    pub attention_layers: Option<usize>,
+    pub experts: Option<usize>,
+    pub experts_used: Option<usize>,
+    /// KV cache bytes one context position costs with half-precision keys and values.
+    pub kv_bytes_per_token: Option<u64>,
+    /// Fixed recurrent-state bytes per sequence; 0 without recurrent layers.
+    pub state_bytes: Option<u64>,
+    /// The file carries multi-token-prediction layers, which the engine does not run.
+    pub has_mtp: bool,
+    /// Weight bytes by type name, for example `Q4_K`.
+    pub weight_types: Vec<(String, u64)>,
+}
+
+/// GGUF spelling of a weight type, for example `Q4_K`.
+pub fn dtype_name(dtype: candle_core::quantized::GgmlDType) -> String {
+    let debug = format!("{dtype:?}");
+    match debug.strip_suffix('K') {
+        Some(base) if base.starts_with('Q') => format!("{base}_K"),
+        _ => debug,
+    }
+}
+
+/// Shortest cycle length checked by [`repeating`] and the generated tokens it needs.
+const REPEAT_MAX_PERIOD: usize = 16;
+const REPEAT_WINDOW: usize = 64;
+
+/// Whether the newest tokens are one cycle of at most [`REPEAT_MAX_PERIOD`] tokens repeated across
+/// the last [`REPEAT_WINDOW`] tokens, which a working model does not produce.
+/// @param generated - tokens generated so far.
+pub fn repeating(generated: &[u32]) -> bool {
+    if generated.len() < REPEAT_WINDOW {
+        return false;
+    }
+    let tail = &generated[generated.len() - REPEAT_WINDOW..];
+    (1..=REPEAT_MAX_PERIOD).any(|p| (p..tail.len()).all(|i| tail[i] == tail[i - p]))
 }
 
 /// Read a GGUF header.
@@ -49,10 +86,20 @@ pub fn inspect(path: &Path) -> Result<(Content, ModelFacts)> {
     let get_str = |k: &str| content.metadata.get(k).and_then(|v| v.to_string().ok()).cloned();
     let architecture = get_str("general.architecture").unwrap_or_else(|| "unknown".into());
     let template = get_str("tokenizer.chat_template");
-    let (supported, unsupported_reason, context_length) = match hparams(&content) {
+    let hp = hparams(&content);
+    let (supported, unsupported_reason, context_length) = match &hp {
         Ok(hp) => (true, None, Some(hp.n_ctx_train)),
         Err(e) => (false, Some(e.to_string()), None),
     };
+    let hp = hp.ok();
+    let mut by_type: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    for info in content.tensor_infos.values() {
+        let dtype = info.ggml_dtype;
+        *by_type.entry(dtype_name(dtype)).or_default() +=
+            (info.shape.elem_count() / dtype.block_size() * dtype.type_size()) as u64;
+    }
+    let mut weight_types: Vec<(String, u64)> = by_type.into_iter().collect();
+    weight_types.sort_by(|a, b| b.1.cmp(&a.1));
     let parameter_count = content.tensor_infos.values().map(|t| t.shape.elem_count() as u64).sum();
     let facts = ModelFacts {
         path: path.to_path_buf(),
@@ -67,6 +114,14 @@ pub fn inspect(path: &Path) -> Result<(Content, ModelFacts)> {
         has_chat_template: template.is_some(),
         template_tools: template.as_deref().is_some_and(|t| t.contains("tools")),
         template_reasoning: template.as_deref().is_some_and(|t| t.contains("<think>")),
+        layers: hp.as_ref().map(|h| h.n_layer),
+        attention_layers: hp.as_ref().map(|h| h.attention_layers()),
+        experts: hp.as_ref().map(|h| h.n_expert),
+        experts_used: hp.as_ref().map(|h| h.n_expert_used),
+        kv_bytes_per_token: hp.as_ref().map(|h| h.kv_bytes_per_token()),
+        state_bytes: hp.as_ref().map(|h| h.state_bytes()),
+        has_mtp: content.metadata.get(&format!("{}.nextn_predict_layers", get_str("general.architecture").unwrap_or_default())).and_then(|v| v.to_u32().ok()).unwrap_or(0) > 0,
+        weight_types,
     };
     Ok((content, facts))
 }
@@ -78,6 +133,8 @@ pub enum Finish {
     Stop,
     Length,
     Cancelled,
+    /// The output settled into a short cycle repeated many times, such as one token over and over.
+    Repetition,
 }
 
 /// Outcome of one generation.
@@ -133,6 +190,10 @@ pub enum Event {
     /// Prompt prepared; `opens_reasoning` marks output that starts inside a reasoning block.
     Start { prompt_tokens: usize, cached_tokens: usize, opens_reasoning: bool },
     Delta(String),
+    /// Prompt evaluation advanced: `done` of `total` uncached prompt tokens.
+    Prefill { done: usize, total: usize },
+    /// Generation advanced, at most twice a second: tokens so far, their rate, and context positions in use.
+    Decode { tokens: usize, tokens_per_second: f64, context_used: usize },
 }
 
 /// Typed failure with a stable code for the host adapter.
@@ -174,6 +235,18 @@ impl Engine {
     /// @param max_slots - KV cache slots kept, at least one.
     /// @param placement - devices for the model's layers.
     pub fn load(path: &Path, context_length: Option<usize>, max_slots: usize, placement: &Placement) -> Result<Self> {
+        Self::load_with_progress(path, context_length, max_slots, placement, &mut |_, _| {})
+    }
+
+    /// [`Engine::load`], reporting each loaded layer.
+    /// @param progress - called with `(layers loaded, total layers)`.
+    pub fn load_with_progress(
+        path: &Path,
+        context_length: Option<usize>,
+        max_slots: usize,
+        placement: &Placement,
+        progress: &mut dyn FnMut(usize, usize),
+    ) -> Result<Self> {
         let (content, facts) = inspect(path)?;
         if !facts.supported {
             return Err(EngineError { code: "UNSUPPORTED_MODEL", message: facts.unsupported_reason.clone().unwrap_or_default() }.into());
@@ -185,7 +258,7 @@ impl Engine {
             text_of(tok.bos),
             text_of(tok.eos),
         )?;
-        let model = Model::load(path, &content, placement)?;
+        let model = Model::load_with_progress(path, &content, placement, progress)?;
         let trained = model.hp.n_ctx_train;
         let context_length = context_length.unwrap_or(trained.min(8192)).clamp(256, trained.max(256));
         Ok(Self {
@@ -274,10 +347,12 @@ impl Engine {
             }
             logits = self.model.forward(chunk)?;
             self.cached.extend_from_slice(chunk);
+            emit(Event::Prefill { done: self.cached.len() - shared, total: prompt.len() - shared });
         }
         self.model.checkpoint();
         let prefill = prefill_started.elapsed();
         let decode_started = Instant::now();
+        let mut last_report = decode_started;
         let mut sampler = Sampler::new(req.sampling);
         let mut guard = if req.tool_grammar { ToolCallGuard::new(req.tools, rendered.opens_reasoning) } else { None };
         let mut utf8 = Utf8Stream::default();
@@ -329,6 +404,15 @@ impl Engine {
             }
             logits = self.model.forward(&[next])?;
             self.cached.push(next);
+            if repeating(&self.cached[prompt.len()..]) {
+                break Finish::Repetition;
+            }
+            if last_report.elapsed() >= Duration::from_millis(500) {
+                last_report = Instant::now();
+                let secs = decode_started.elapsed().as_secs_f64();
+                let rate = if secs > 0.0 { (produced as f64 / secs * 10.0).round() / 10.0 } else { 0.0 };
+                emit(Event::Decode { tokens: produced, tokens_per_second: rate, context_used: self.cached.len() });
+            }
         };
         pending.push_str(&utf8.finish());
         if !pending.is_empty() && finish != Finish::Cancelled {
@@ -380,7 +464,16 @@ fn held_tail(text: &str, stops: &[String], max_stop: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::held_tail;
+    use super::{held_tail, repeating};
+
+    #[test]
+    fn detects_short_cycles_only() {
+        assert!(repeating(&[55u32; 64]));
+        assert!(repeating(&(0..80).map(|i| [7u32, 8, 9][i % 3]).collect::<Vec<_>>()));
+        assert!(!repeating(&[55u32; 63]));
+        assert!(!repeating(&(0..200u32).collect::<Vec<_>>()));
+        assert!(!repeating(&(0..80).map(|i| (i % 40) as u32).collect::<Vec<_>>()));
+    }
 
     #[test]
     fn holds_partial_stop() {

@@ -1,8 +1,8 @@
 # The dsh-offline-app bundle patch: layered after dsh-web-app and dsh-offline in
 # the desktop composition, it removes the Web app rows that contact a remote
 # service on their own (account sign-in, product telemetry and analytics, and
-# npm-backed plugin installation), removes the sidebar web-browser tabs and the
-# catalog model selector, and adds the Local models page and code mode.
+# npm-backed plugin installation), removes the sidebar web-browser tabs, the
+# harness self-description, and the catalog model selector, and adds the Local models page and code mode.
 
 - id: account-controller
   disabled: true
@@ -17,6 +17,11 @@
 
 # FreakSeek ships no browser: the sidebar's web-browser tabs are removed.
 - id: ui-sidebar-browser
+  disabled: true
+
+# The agent works on the user's project, not on FreakSeek: the context naming the
+# harness checkout and GUI URL invites a local model to explore the application folder.
+- id: harness-dev-context
   disabled: true
 
 # The composer's model control opens a .gguf file dialog (ui-settings-local-models),

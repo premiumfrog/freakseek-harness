@@ -1202,9 +1202,10 @@ Remote service over one plugin instance's LocalModelRuntime.
  * Load one catalog model into memory, replacing the loaded one, and make it
  * the default model of new conversations when the deployment has one.
  * @param modelId - catalog model id.
+ * @param options - settings for this load, saved for later loads when `remember` is set; omitted uses saved settings.
  * @returns the snapshot after loading, or the failure reason.
  */
-@Remote('load') async load(modelId: string): Promise<LocalModelsActionResult>
+@Remote('load') async load(modelId: string, options?: LocalModelLoadOptions): Promise<LocalModelsActionResult>
 
 /**
  * Add a GGUF file from anywhere on disk to the catalog, remember it across restarts, load it, and make it the
@@ -1213,6 +1214,23 @@ Remote service over one plugin instance's LocalModelRuntime.
  * @returns the model id and snapshot after loading, or the failure reason.
  */
 @Remote('loadFile') async loadFile(path: string): Promise<LocalModelsFileResult>
+
+/**
+ * Add a GGUF file from anywhere on disk to the catalog without loading it, so a configuration surface can ask for
+ * load settings first: copied into the active collection, or remembered in place across restarts.
+ * @param path - absolute path to a `.gguf` file.
+ * @param copy - copy the file into the active collection instead of listing it in place.
+ * @returns the model id and snapshot, or the failure reason.
+ */
+@Remote('addFile') async addFile(path: string, copy: boolean): Promise<LocalModelsFileResult>
+
+/**
+ * Save load and sampling settings for a model file.
+ * @param modelId - catalog model id.
+ * @param settings - the settings; invalid fields are dropped.
+ * @returns the snapshot listing the saved settings, or the failure reason.
+ */
+@Remote('saveSettings') async saveSettings(modelId: string, settings: LocalModelSettings): Promise<LocalModelsActionResult>
 
 /**
  * Copy a GGUF file from anywhere on disk into the active collection, load the copy, and make it the default model
@@ -1339,4 +1357,26 @@ Prepare headers for one pi-ai inference call, excluding model discovery. Listene
 ```
 
 Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
+
+<a id="local-models-events"></a>
+
+### `local-models/*` events
+
+<a id="local-modelsstate--emit"></a>
+
+#### `local-models/state` — emit
+
+The local engine's state changed without a catalog change: load progress, generation progress, or a finished generation's statistics. Sent at most four times a second; catalog changes still arrive as `llm/models-updated`.
+
+```ts cordis-catalog
+/**
+ * The local engine's state changed without a catalog change: load progress, generation progress, or a finished
+ * generation's statistics. Sent at most four times a second; catalog changes still arrive as `llm/models-updated`.
+ * @mode emit
+ * @param state - the new state.
+ */
+'local-models/state'(state: LocalModelsState): void
+```
+
+Source: [`packages/llm/llm-local-gguf/src/types.ts`](../../packages/llm/llm-local-gguf/src/types.ts)
 <!-- END GENERATED cordis-surface -->

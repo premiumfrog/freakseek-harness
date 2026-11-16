@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { LocalModelEntry } from '@deepseek-ai/dsh-api-remotes/client'
+import type { LocalModelEntry, LocalModelSettings } from '@deepseek-ai/dsh-api-remotes/client'
 import type { LocalModelsPageState } from './controller.ts'
 import type { LocalModelsLocaleKey } from './locales.ts'
 import css from './LocalModelsSection.module.css'
+import { estimate, LoadOptionsDialog } from './LoadOptionsDialog.tsx'
+import { liveStats } from './ModelFileButton.tsx'
 
 /** Registration-side face of the section. */
 export type LocalModelsSectionInjected = {
@@ -16,6 +18,10 @@ export type LocalModelsSectionInjected = {
   }
   refresh: () => void
   load: (modelId: string) => void
+  /** Load the dialog's model with the chosen settings, saving them when `remember` is set. */
+  confirmLoad: (settings: LocalModelSettings, remember: boolean) => void
+  /** Close the load options dialog without loading. */
+  cancelLoad: () => void
   /** Open the desktop file dialog and load the chosen GGUF file; absent outside the desktop app. */
   loadFile?: () => void
   unload: () => void
@@ -53,7 +59,7 @@ function gigabytes(bytes: number): string {
 
 /** Render the section. */
 export function LocalModelsSection({
-  t, useModels, refresh, load, loadFile, unload, setCollection, createCollection, setCopy,
+  t, useModels, refresh, load, confirmLoad, cancelLoad, loadFile, unload, setCollection, createCollection, setCopy,
 }: LocalModelsSectionProps) {
   const page = useModels(value => value)
   const [name, setName] = useState('')
@@ -81,7 +87,26 @@ export function LocalModelsSection({
             <span>{fileSize(model.fileBytes, t)}</span>
             {model.tools && <Tag tone="neutral">{t('tools')}</Tag>}
             {model.reasoning && <Tag tone="neutral">{t('reasoning')}</Tag>}
+            {model.structure?.hasMtp === true && <Tag tone="neutral">{t('card.mtp')}</Tag>}
           </div>
+          {model.structure !== undefined && (
+            <div className={css.modelFacts}>
+              <span>{t('card.layers', { layers: model.structure.layers, attention: model.structure.attentionLayers })}</span>
+              {model.structure.experts > 0 && <span>{t('card.experts', { total: model.structure.experts, used: model.structure.expertsUsed })}</span>}
+              {model.trainedContextLength !== undefined && <span>{t('card.context', { tokens: Math.round(model.trainedContextLength / 1024) })}</span>}
+              <span>{t('card.kv', { size: gigabytes(estimate(model, 32768, engine).kv) })}</span>
+              {model.structure.weightTypes.length > 0 && (
+                <span>{model.structure.weightTypes.slice(0, 3).map(([type, bytes]) => `${type} ${String(Math.round(bytes / model.fileBytes * 100))}%`).join(' · ')}</span>
+              )}
+            </div>
+          )}
+          {model.settings !== undefined && (
+            <div className={css.modelFacts}>
+              <span>{t('card.saved', { context: model.settings.contextLength === undefined ? t('card.defaultValue') : `${String(Math.round(model.settings.contextLength / 1024))}k` })}</span>
+              {model.settings.askOnLoad && <span>{t('card.asks')}</span>}
+            </div>
+          )}
+          {loading && state?.kind === 'loading' && liveStats(state, t) !== undefined && <div className={css.modelStatus}>{liveStats(state, t)}</div>}
           {loaded && state?.kind === 'loaded' && <div className={css.modelStatus}>{state.device === 'cpu' ? t('inUse', { context: state.contextLength }) : t('inUseGpu', { context: state.contextLength, device: state.device, layers: state.gpuLayers })}</div>}
           {loaded && state?.kind === 'loaded' && state.stats.warning !== undefined && <div className={css.modelProblem}>{t('statWarning', { reason: state.stats.warning })}</div>}
           {loaded && state?.kind === 'loaded' && (
@@ -116,8 +141,12 @@ export function LocalModelsSection({
       </li>
     )
   }
+  const dialogModel = page.dialog?.owner === 'section' ? snapshot?.models.find(model => model.id === page.dialog?.modelId) : undefined
   return (
     <div className={css.section}>
+      {dialogModel !== undefined && (
+        <LoadOptionsDialog t={t} model={dialogModel} engine={engine} onCancel={cancelLoad} onLoad={confirmLoad} />
+      )}
       <div className={css.header}>
         <h2 className={css.heading}>{t('title')}</h2>
         <div className={css.headerActions}>
