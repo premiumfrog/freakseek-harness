@@ -11,6 +11,7 @@ import type { Volatile } from '@deepseek-ai/cordis'
 import { expandHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import z from '@deepseek-ai/schemastery'
 import { samplingDefaults, type SamplingModelFacts } from './sampling-defaults.ts'
+import type { RuntimeSettings } from './runtime.ts'
 import type { EngineCandidate, EnginePlacement, EngineSampling } from './types.ts'
 
 /** Environment variable naming the engine executable. */
@@ -264,4 +265,33 @@ export function resolveStateFile(importsFile: string): string {
 export function resolveImportedModelsFile(configured: string | undefined, env: Readonly<Record<string, string | undefined>>): string {
   if (configured !== undefined && configured !== '') return resolve(expandHomePath(configured))
   return join(resolveDshHome(undefined, env), 'local-models', 'imported.json')
+}
+
+/**
+ * Runtime settings readers over a validated configuration, shared by the plugin and the terminal chat.
+ * @param config - validated configuration.
+ * @param env - launch environment.
+ * @param resourcesPath - Electron's resources directory, when running inside Electron.
+ * @returns readers evaluated at each runtime operation.
+ */
+export function runtimeSettingsOf(
+  config: Config,
+  env: Readonly<Record<string, string | undefined>>,
+  resourcesPath: string | undefined,
+): RuntimeSettings {
+  const engine = resolveEngineCandidates(config, env, resourcesPath)
+  const importsFile = () => resolveImportedModelsFile(config.importedModelsFile, env)
+  return {
+    engine: () => engine,
+    threads: () => (config.threads === 0 ? undefined : config.threads),
+    source: () => resolveModelSource({ modelDirectories: config.modelDirectories.get(), modelsRoot: config.modelsRoot }, env),
+    contextLength: () => config.contextLength.get(),
+    cacheSlots: () => config.cacheSlots,
+    placement: () => placementOf(config),
+    importsFile,
+    stateFile: () => resolveStateFile(importsFile()),
+    shutdownGraceMillis: () => config.shutdownGraceMillis,
+    modelSettingsFile: () => resolveModelSettingsFile(importsFile()),
+    idleUnloadMinutes: () => config.idleUnloadMinutes.get(),
+  }
 }

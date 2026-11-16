@@ -50,11 +50,12 @@ Put `.gguf` files in a collection folder under `models\`, start `FreakSeek.exe`,
 
 ### CLI
 
-From the portable folder, `freakseek.cmd` runs one task on a local model in the current directory:
+From the portable folder, `freakseek.cmd` runs one task on a local model in the current directory, or chats with one:
 
 ```bat
 freakseek "explain what this repository does"
 freakseek --session-id <id> "now add tests"
+freakseek chat
 freakseek --help
 ```
 

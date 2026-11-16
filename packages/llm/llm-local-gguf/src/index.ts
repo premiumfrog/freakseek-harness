@@ -8,17 +8,17 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
-import {
-  Config, placementOf, resolveEngineCandidates, resolveImportedModelsFile, resolveModelSettingsFile, resolveModelSource, resolveStateFile,
-  samplingOf,
-} from './config.ts'
+import { Config, runtimeSettingsOf, samplingOf } from './config.ts'
 import { LocalModelRuntime } from './runtime.ts'
 import { LocalModelsService } from './service.ts'
 
 export {
   Config, ENGINE_DIR_ENV, ENGINE_ENV, engineFileName, MODELS_ROOT_ENV, resolveEngineCandidates, resolveEnginePath,
-  resolveImportedModelsFile, resolveModelDirectories, resolveModelSettingsFile, resolveModelSource, resolveStateFile,
+  resolveImportedModelsFile, resolveModelDirectories, resolveModelSettingsFile, resolveModelSource, resolveStateFile, runtimeSettingsOf,
+  samplingOf,
 } from './config.ts'
+export { runLocalChat } from './chat.ts'
+export type { LocalChatOptions } from './chat.ts'
 export type { ModelSource } from './config.ts'
 export { DEFAULT_COLLECTION_ID, validateCollectionName } from './collections.ts'
 export { LocalGgufAdapter, LOCAL_PROVIDER } from './adapter.ts'
@@ -45,21 +45,13 @@ function electronResourcesPath(): string | undefined {
  */
 export function apply(ctx: Context, config: Config): void {
   const env = process.env
-  const engine = resolveEngineCandidates(config, env, electronResourcesPath())
-  const importsFile = () => resolveImportedModelsFile(config.importedModelsFile, env)
-  const runtime = new LocalModelRuntime({
-    engine: () => engine,
-    threads: () => (config.threads === 0 ? undefined : config.threads),
-    source: () => resolveModelSource({ modelDirectories: config.modelDirectories.get(), modelsRoot: config.modelsRoot }, env),
-    contextLength: () => config.contextLength.get(),
-    cacheSlots: () => config.cacheSlots,
-    placement: () => placementOf(config),
-    importsFile,
-    stateFile: () => resolveStateFile(importsFile()),
-    shutdownGraceMillis: () => config.shutdownGraceMillis,
-    modelSettingsFile: () => resolveModelSettingsFile(importsFile()),
-    idleUnloadMinutes: () => config.idleUnloadMinutes.get(),
-  }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) }, (state) => { ctx.emit('local-models/state', state) })
+  const settings = runtimeSettingsOf(config, env, electronResourcesPath())
+  const engine = settings.engine()
+  const runtime = new LocalModelRuntime(
+    settings,
+    () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) },
+    (state) => { ctx.emit('local-models/state', state) },
+  )
   ctx.effect(() => () => runtime.dispose(), 'llm-local-gguf: engine process')
   ctx.llm.registerAdapter([LOCAL_PROVIDER], new LocalGgufAdapter(runtime, {
     sampling: facts => samplingOf(config, facts),

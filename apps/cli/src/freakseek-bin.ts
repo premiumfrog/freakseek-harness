@@ -21,6 +21,14 @@ switch (command.kind) {
     process.stderr.write(`${command.message}\n`)
     process.exitCode = 2
     break
+  case 'chat': {
+    const { runLocalChat } = await import('@deepseek-ai/dsh-llm-local-gguf')
+    process.exitCode = await runLocalChat({
+      input: process.stdin, output: process.stdout, env: process.env, color: process.stdout.isTTY,
+      ...command.modelId === undefined ? {} : { modelId: command.modelId },
+    })
+    break
+  }
   case 'run': {
     const { runCli } = await import('./bin.ts')
     await runCli({}, command.launcherArgs)

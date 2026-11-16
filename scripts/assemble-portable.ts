@@ -224,6 +224,7 @@ Models
 
 Command line
   freakseek "explain this repository"     one task in the current folder
+  freakseek chat                          chat with a model in the terminal
   freakseek --help                        every option
 
 GPU

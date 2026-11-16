@@ -18,8 +18,10 @@ describe('parseFreakSeekArgs', () => {
     expect(FREAKSEEK_PROFILE).toBe('cli')
   })
 
-  it('reserves the chat subcommand', () => {
-    expect(parseFreakSeekArgs(['chat'])).toEqual({ kind: 'error', message: 'freakseek chat is not available yet; run freakseek "<task>"' })
+  it('opens a chat, optionally with a model id', () => {
+    expect(parseFreakSeekArgs(['chat'])).toEqual({ kind: 'chat' })
+    expect(parseFreakSeekArgs(['chat', 'coding/qwen'])).toEqual({ kind: 'chat', modelId: 'coding/qwen' })
+    expect(parseFreakSeekArgs(['chat', '--json'])).toEqual({ kind: 'error', message: 'usage: freakseek chat [model-id]' })
   })
 
   it('names the product and the one-shot usage in its help', () => {

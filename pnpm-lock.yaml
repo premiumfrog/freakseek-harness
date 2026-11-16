@@ -405,6 +405,9 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:*
         version: link:../../packages/util/launch-environment
+      '@deepseek-ai/dsh-llm-local-gguf':
+        specifier: workspace:*
+        version: link:../../packages/llm/llm-local-gguf
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../../packages/mcp/mcp-client
