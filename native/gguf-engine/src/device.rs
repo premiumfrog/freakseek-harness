@@ -11,6 +11,9 @@ use serde::Serialize;
 
 use crate::engine::EngineError;
 
+/// Accelerator memory left free for KV caches, activations, and the kernels' scratch buffers.
+const VRAM_RESERVE: u64 = 1536 << 20;
+
 /// Where a model's layers run.
 #[derive(Debug, Clone)]
 pub struct Placement {
@@ -18,12 +21,15 @@ pub struct Placement {
     pub device: Device,
     /// Trailing layers placed on `device`; `None` places every layer there.
     pub gpu_layers: Option<usize>,
+    /// Accelerator bytes the model may use; `None` places no limit. A model with routed experts
+    /// and no `gpu_layers` keeps the experts that exceed it in system memory.
+    pub vram_budget: Option<u64>,
 }
 
 impl Placement {
     /// Every layer on the CPU.
     pub fn cpu() -> Self {
-        Self { device: Device::Cpu, gpu_layers: None }
+        Self { device: Device::Cpu, gpu_layers: None, vram_budget: None }
     }
 
     /// Resolve a wire device request.
@@ -47,7 +53,13 @@ impl Placement {
             },
         };
         let gpu_layers = if device.is_cpu() { None } else { gpu_layers };
-        Ok(Self { device, gpu_layers })
+        let vram_budget = match device.location() {
+            candle_core::DeviceLocation::Cuda { gpu_id } => {
+                devices().ok().and_then(|d| d.into_iter().find(|d| d.ordinal == gpu_id)).map(|d| d.free_bytes.saturating_sub(VRAM_RESERVE))
+            }
+            _ => None,
+        };
+        Ok(Self { device, gpu_layers, vram_budget })
     }
 
     /// Whether layer `index` of `n_layer` runs on the accelerator.

@@ -123,6 +123,8 @@ export interface EngineGenerateRequest {
   readonly thinking?: boolean
   /** KV cache slot; requests in one slot reuse each other's prompt prefix. */
   readonly slot: string
+  /** Constrain each `<tool_call>` body to a declared tool and its parameter schema. */
+  readonly toolGrammar: boolean
 }
 
 /** One model file offered by the catalog. */

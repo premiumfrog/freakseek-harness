@@ -41,6 +41,7 @@ The `cuda` feature needs the CUDA Toolkit 12.x (`nvcc`) at build time and the NV
 The tests cover tokenizer parity, forward-pass parity, and the protocol:
 
 - `tests/model_reference.rs` writes random `llama`, tied-output `llama`, `qwen2`, and `qwen3` models and compares the engine's logits with candle-transformers' reference implementations for prefill, incremental decoding, and KV-cache prefix reuse.
+- `tests/hybrid_reference.rs` writes deterministic `qwen35` and `qwen35moe` models and compares the engine's logits with `tests/fixtures/*.logits`, which llama.cpp produced for the same files, for prefill, chunked prefill, incremental decoding, checkpoint reuse, and a parked slot.
 - `tests/tokenizer_reference.rs` compares tokenization with llama.cpp's `test-tokenizer-0` vocabularies (`llama-spm`, `llama-bpe`, `qwen2`, `phi-3`, `gpt-2`) when `DSH_GGUF_VOCAB_DIR` names a directory holding llama.cpp's `models/ggml-vocab-*.gguf{,.inp,.out}` files; it skips with a message otherwise.
 - `tests/protocol.rs` drives the built binary through hello, inspect, load, generate with cache reuse, cancel, unload, and shutdown.
 
@@ -54,8 +55,18 @@ The tests cover tokenizer parity, forward-pass parity, and the protocol:
 | `llama`, `mistral` | Llama 2, Llama 3.x, Mistral, DeepSeek-R1 Llama distills | Adjacent-pair RoPE; Llama 3.1 `rope_freqs` scaling |
 | `qwen2` | Qwen 2, Qwen 2.5, DeepSeek-R1 Qwen distills | Q/K/V biases; half-split RoPE |
 | `qwen3` | Qwen 3 dense | Per-head Q/K RMS norm |
+| `qwen3moe` | Qwen 3 MoE (30B-A3B, 235B-A22B) | Routed experts |
+| `qwen35` | Qwen 3.5 and 3.6 dense | Gated attention on every fourth layer, gated delta-net layers elsewhere; interleaved multi-axis RoPE |
+| `qwen35moe` | Qwen 3.5 and 3.6 MoE (35B-A3B and larger) | The `qwen35` layers with routed and shared experts; multi-token-prediction blocks are not loaded |
 
 Weight types are those candle's quantized kernels load: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, and Q2_K to Q8_K. Tokenizers are SentencePiece score merging (`llama`) and byte-level BPE (`gpt2`) with the pre-tokenizer named by `tokenizer.ggml.pre`.
+
+<a id="recurrent-layers-and-experts"></a>
+## Recurrent layers and routed experts
+
+A gated delta-net layer keeps a fixed-size state per sequence, which cannot be cut back to an earlier position. The engine checkpoints those states after each prefill step, after the prompt, and every 128 generated tokens, keeping eight per slot. When a request shares a prefix with the slot's previous one, the engine returns to the newest checkpoint at or before the shared prefix and evaluates from there; `cachedTokens` reports that position.
+
+With a GPU and no `gpuLayers`, a model with routed experts places every layer's attention, router, and shared-expert weights on the GPU and fills the remaining VRAM, less a 1.5 GiB reserve, with individual experts; the others run from system memory. The engine counts how often each expert is selected and adds the counts to `<model>.gguf.routing` when the model unloads, so the next load places the most used experts on the GPU. Setting `gpuLayers` selects whole trailing layers instead.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

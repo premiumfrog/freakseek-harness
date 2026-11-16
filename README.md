@@ -109,6 +109,8 @@ The Local models settings page shows the device and the number of offloaded laye
 | `llama`, `mistral` | Llama 2, Llama 3.x, Mistral, DeepSeek-R1 Llama distills |
 | `qwen2` | Qwen 2, Qwen 2.5, DeepSeek-R1 Qwen distills |
 | `qwen3` | Qwen 3 dense |
+| `qwen3moe` | Qwen 3 MoE |
+| `qwen35`, `qwen35moe` | Qwen 3.5 and 3.6, dense and MoE (for example Qwen3.6-35B-A3B) |
 
 Weights may be F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, or Q2_K to Q8_K. The [engine README](native/gguf-engine/README.md) covers tokenizers, the stdio [protocol](native/gguf-engine/PROTOCOL.md), tests, and limitations.
 

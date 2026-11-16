@@ -18,25 +18,36 @@
               maxBytes: 65536
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
+          # With dsh-offline (one local model), the rows below marked "lean" drop tools that cost
+          # prompt tokens on every request and that a single local engine cannot use well:
+          # background jobs, scheduling, goals, delegation, and image reading.
+          # DSH_LOCAL_FULL_TOOLS=1 keeps them.
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
+            config:
+              enableRunInBackground: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') !== true || process.env.DSH_LOCAL_FULL_TOOLS === '1'"
           - id: tool-pwsh
             name: '@deepseek-ai/dsh-tool-pwsh'
             disabled: !!js process.platform !== 'win32'
+            config:
+              enableRunInBackground: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') !== true || process.env.DSH_LOCAL_FULL_TOOLS === '1'"
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
             config:
               # Set false to drop the apply_patch tool beside edit.
               applyPatch: false
+              readImage: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') !== true || process.env.DSH_LOCAL_FULL_TOOLS === '1'"
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+            disabled: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true && process.env.DSH_LOCAL_FULL_TOOLS !== '1'"
           - id: tool-schedule
             name: '@deepseek-ai/dsh-tool-schedule'
+            disabled: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true && process.env.DSH_LOCAL_FULL_TOOLS !== '1'"
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
@@ -45,6 +56,7 @@
             name: '@deepseek-ai/dsh-command-goal'
           - id: tool-goal
             name: '@deepseek-ai/dsh-tool-goal'
+            disabled: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true && process.env.DSH_LOCAL_FULL_TOOLS !== '1'"
           - id: planning
             name: cordis:group
             group: true
@@ -86,6 +98,7 @@
           - id: delegation
             name: cordis:group
             group: true
+            disabled: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true && process.env.DSH_LOCAL_FULL_TOOLS !== '1'"
             isolate:
               workflowEngine: true
             config:

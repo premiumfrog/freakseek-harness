@@ -48,16 +48,26 @@ To remove the remaining model-initiated traffic as well, disable the web tool in
 | `plugin-manager`, `tool-plugin-manager` | npm-backed plugin installation |
 | `web-search-deepseek`, `web-deepseek-api` | Web search through the DeepSeek API |
 
+It also disables model-facing tools that one local model cannot use well; see [Model Experience](#model-experience).
+
 [`dsh-offline-app`](../offline-app/README.md) removes the Web app's account, telemetry, and plugin-installation rows for the desktop app, which also confines its own Electron session to loopback and local resources, covering update checks and spell-check dictionary downloads.
 
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the bundle only selects rows; the local model route and the web tools own every model-visible input.
+### Lean tool surface and persona
+
+#### What the model sees
+
+The system prompt opens with `You are FreakSeek, a coding agent running on a local model on the user's computer.` in place of the upstream identity line (an agent preset's persona section follows it in the desktop app). The declared tools are `bash` or `pwsh` without `run_in_background`, `read`, `write`, `edit`, `glob`, `grep`, `web_search`, `web_fetch`, `todo_write`, and `skill`. The bundle disables the subagent, agent-team, workflow, goal, background-job, and working-directory tools and `read_image`, together with the guidance sections those tools contribute; the desktop's standard agent preset applies the same selection and also drops the schedule tool. `DSH_LOCAL_FULL_TOOLS=1` keeps every tool.
+
+#### Token effect
+
+With the Qwen 2.5 tokenizer the `cli` profile's first request falls from about 5,460 prompt tokens to about 2,200: the removed tool declarations account for about 3,100 tokens (`workflow` alone 866) and their guidance sections for the rest.
 
 #### KV Cache effect
 
-The bundle adds nothing to the request prefix; the local route's prefix reuse applies.
+The tool list and system prompt stay fixed for a Session, so the shorter prefix is still reused in full by every later request; only the first request of a Session evaluates it.
 
 ## Known Limitations and Deferred Work
 

@@ -57,7 +57,9 @@ export function apply(ctx: Context, config: Config): void {
   }, () => { ctx.emit('llm/models-updated', LOCAL_PROVIDER) })
   ctx.effect(() => () => runtime.dispose(), 'llm-local-gguf: engine process')
   ctx.llm.registerAdapter([LOCAL_PROVIDER], new LocalGgufAdapter(runtime, {
-    sampling: () => samplingOf(config),
+    sampling: facts => samplingOf(config, facts),
+    constrainToolCalls: () => config.constrainToolCalls.get(),
+    thinking: () => config.thinking.get(),
     maxOutputTokens: () => config.maxOutputTokens.get(),
   }))
   ctx.llm.registerConfigurableProviders([{

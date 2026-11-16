@@ -18,10 +18,11 @@ path = "src/main.rs"
 candle-core = "0.11"
 candle-nn = "0.11"
 fancy-regex = "0.14"
-minijinja = { version = "2", features = ["loader", "json"] }
+rayon = "1"
+minijinja = { version = "2", features = ["loader", "json", "preserve_order"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 rand = "0.8"
 anyhow = "1"
 

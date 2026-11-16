@@ -47,6 +47,47 @@
     searchProvider: duckduckgo
     fetchProvider: http
 
+# The fixed upstream identity line is dropped and the persona names this product.
+# Agent presets (the desktop) supply their own persona section over this prefix.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: >-
+      You are FreakSeek, a coding agent running on a local model on the user's computer.
+
+# Lean tool surface for one local model. Every declared tool costs prompt
+# tokens on each request, and small models call unfamiliar tools wrongly, so
+# delegation (one engine runs one generation at a time), workflows, goals,
+# background jobs, image reading (the local route is text-only), and the
+# working-directory tool are left out. DSH_LOCAL_FULL_TOOLS=1 keeps them.
+# The desktop's agent presets apply the same selection to their own rows.
+- id: tool-subagent-control
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-subagent
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-subagent-fork
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-agent-team
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-workflow
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-goal
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-jobs
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-working-directory
+  disabled: !!js process.env.DSH_LOCAL_FULL_TOOLS !== '1'
+- id: tool-bash
+  config:
+    enableRunInBackground: !!js process.env.DSH_LOCAL_FULL_TOOLS === '1'
+- id: tool-pwsh
+  config:
+    enableRunInBackground: !!js process.env.DSH_LOCAL_FULL_TOOLS === '1'
+- id: tool-fs
+  config:
+    applyPatch: false
+    readImage: !!js process.env.DSH_LOCAL_FULL_TOOLS === '1'
+
 # New conversations start on the local route; loading a model on the
 # Local models page saves it here.
 - id: agent-default-model
