@@ -12,7 +12,7 @@ on:
       tag:
         description: Release tag to create or update
         type: string
-        default: freakseek-v0.2.0
+        default: freakseek-v0.3.0
         required: true
       compute_cap:
         description: Lowest CUDA compute capability the kernels target (75 = RTX 20-series; newer GPUs JIT the PTX)
@@ -189,21 +189,25 @@ jobs:
       - uses: actions/download-artifact@v7.0.0
         with:
           path: artifacts
-      - name: Add engines and zip
+      - name: Add engines and archive
         run: |
           set -euo pipefail
           7z x -bso0 artifacts/app/app.7z
-          mkdir -p FreakSeek/engine/cpu FreakSeek/engine/cuda
+          mkdir -p FreakSeek/engine/cpu
           cp artifacts/engine-cpu/dsh-gguf-engine.exe FreakSeek/engine/cpu/
+          base="FreakSeek-${RELEASE_TAG}-win-x64"
+          # CPU-only folder first, then the same folder with the CUDA engine and its DLLs.
+          7z a -t7z -mx=9 -m0=lzma2 -md=256m -ms=on -bso0 "$base-cpu.7z" FreakSeek
+          mkdir -p FreakSeek/engine/cuda
           cp artifacts/engine-cuda/* FreakSeek/engine/cuda/
-          name="FreakSeek-${RELEASE_TAG}-win-x64.zip"
-          7z a -tzip -mx=5 -bso0 "$name" FreakSeek
-          ls -la "$name"
-          echo "ZIP=$name" >> "$GITHUB_ENV"
+          7z a -t7z -mx=9 -m0=lzma2 -md=256m -ms=on -bso0 "$base.7z" FreakSeek
+          7z a -tzip -mx=7 -bso0 "$base.zip" FreakSeek
+          ls -la "$base"*
+          echo "BASE=$base" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: freakseek-win-x64
-          path: ${{ env.ZIP }}
+          path: ${{ env.BASE }}.7z
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -214,9 +218,12 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: FreakSeek ${{ env.RELEASE_TAG }} (Windows x64, portable)
           prerelease: true
-          files: ${{ env.ZIP }}
+          files: |
+            ${{ env.BASE }}.7z
+            ${{ env.BASE }}.zip
+            ${{ env.BASE }}-cpu.7z
           body: |
-            Portable Windows x64 build: unzip anywhere and run FreakSeek.exe. No installer; conversations and settings stay in the folder's data\ directory.
+            Portable Windows x64 build: extract anywhere and run FreakSeek.exe. The .7z is the smallest download (Windows 11 extracts it natively; otherwise use 7-Zip), the .zip is the same folder, and -cpu.7z omits the CUDA engine. No installer; conversations and settings stay in the folder's data\ directory.
 
             - Put .gguf models in models\<collection>\ (create collections from the app).
             - CUDA engine for RTX 20-series and newer (compute capability ${{ env.CUDA_COMPUTE_CAP }}+); without an NVIDIA driver, FreakSeek uses the CPU engine automatically.
