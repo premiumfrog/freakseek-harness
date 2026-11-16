@@ -38,7 +38,7 @@ pub fn write_model(arch: &str, tied: bool, tokenizer: bool) -> PathBuf {
         (k("block_count"), Value::U32(LAYERS as u32)),
         (k("embedding_length"), Value::U32(EMBD as u32)),
         (k("feed_forward_length"), Value::U32(FFN as u32)),
-        (k("context_length"), Value::U32(512)),
+        (k("context_length"), Value::U32(4096)),
         (k("attention.head_count"), Value::U32(HEADS as u32)),
         (k("attention.head_count_kv"), Value::U32(KV_HEADS as u32)),
         (k("attention.key_length"), Value::U32(HEAD_DIM as u32)),

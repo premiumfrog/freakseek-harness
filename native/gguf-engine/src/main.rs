@@ -27,7 +27,14 @@ enum Command {
     Devices,
     Inspect { path: PathBuf },
     #[serde(rename_all = "camelCase")]
-    Load { path: PathBuf, context_length: Option<usize>, slots: Option<usize>, device: Option<String>, gpu_layers: Option<usize> },
+    Load {
+        path: PathBuf,
+        context_length: Option<usize>,
+        slots: Option<usize>,
+        device: Option<String>,
+        gpu_layers: Option<usize>,
+        prompt_cache_dir: Option<PathBuf>,
+    },
     Unload,
     Status,
     #[serde(rename_all = "camelCase")]
@@ -90,7 +97,7 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
     for job in rx {
         let id = job.id.as_str();
         match job.command {
-            Command::Load { path, context_length, slots, device, gpu_layers } => {
+            Command::Load { path, context_length, slots, device, gpu_layers, prompt_cache_dir } => {
                 engine = None;
                 let started = std::time::Instant::now();
                 let progress_out = out.clone();
@@ -117,7 +124,10 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
                     }
                 }
                 match loaded {
-                    Ok(e) => {
+                    Ok(mut e) => {
+                        if let Some(dir) = &prompt_cache_dir {
+                            e.set_prompt_cache(dir);
+                        }
                         let mut result = placement_facts(&e);
                         result["facts"] = json!(e.facts);
                         result["vocab"] = json!(e.vocab());

@@ -52,6 +52,19 @@ impl RecState {
         Self { conv: vec![0.0; (d.kernel - 1) * d.conv_dim()], s: vec![0.0; d.v_heads * d.head_dim * d.head_dim] }
     }
 
+    /// The convolution window and state matrices, for saving.
+    pub fn parts(&self) -> (&[f32], &[f32]) {
+        (&self.conv, &self.s)
+    }
+
+    /// Rebuild a state from saved parts.
+    /// @param d - layer dimensions the parts must match.
+    /// @returns `None` when the sizes do not match `d`.
+    pub fn from_parts(d: &DeltaDims, conv: Vec<f32>, s: Vec<f32>) -> Option<Self> {
+        let empty = Self::new(d);
+        (conv.len() == empty.conv.len() && s.len() == empty.s.len()).then_some(Self { conv, s })
+    }
+
     /// Return to the state of an empty sequence.
     pub fn reset(&mut self) {
         self.conv.fill(0.0);

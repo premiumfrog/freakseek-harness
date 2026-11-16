@@ -226,6 +226,37 @@ pub struct Engine {
     parked: Vec<(String, CacheSet, Vec<u32>)>,
     /// Maximum slots kept, the active one included.
     max_slots: usize,
+    /// Folder of saved prompt caches for this model file; `None` saves none.
+    prompt_cache: Option<PathBuf>,
+}
+
+/// Shortest prompt worth saving to, or reading from, the prompt cache folder.
+const DISK_CACHE_MIN_TOKENS: usize = 1024;
+/// Saved prompt caches kept per model file; the least recently used are deleted.
+const DISK_CACHE_FILES: usize = 3;
+/// Prefix tokens another slot or a saved cache must add over the slot's own before it is copied.
+const BORROW_MIN_TOKENS: usize = 128;
+
+/// Length of the common prefix of two token sequences.
+fn common_prefix(a: &[u32], b: &[u32]) -> usize {
+    a.iter().zip(b).take_while(|(x, y)| x == y).count()
+}
+
+/// Folder for one model file's saved prompt caches: a name derived from the file's path, size, and modification time.
+fn cache_folder(root: &Path, model: &Path) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    model.hash(&mut h);
+    if let Ok(meta) = std::fs::metadata(model) {
+        meta.len().hash(&mut h);
+        meta.modified().ok().hash(&mut h);
+    }
+    root.join(format!("{:016x}", h.finish()))
+}
+
+fn read_tokens(path: &Path) -> Option<Vec<u32>> {
+    let bytes = std::fs::read(path).ok()?;
+    Some(bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
 }
 
 impl Engine {
@@ -236,6 +267,101 @@ impl Engine {
     /// @param placement - devices for the model's layers.
     pub fn load(path: &Path, context_length: Option<usize>, max_slots: usize, placement: &Placement) -> Result<Self> {
         Self::load_with_progress(path, context_length, max_slots, placement, &mut |_, _| {})
+    }
+
+    /// Save long prompts' caches under `root` and reuse them in later conversations and runs.
+    /// @param root - prompt cache folder; each model file gets its own subfolder.
+    pub fn set_prompt_cache(&mut self, root: &Path) {
+        self.prompt_cache = Some(cache_folder(root, &self.facts.path));
+    }
+
+    /// Replace the active cache with `cache` holding `tokens`.
+    fn adopt(&mut self, cache: CacheSet, tokens: Vec<u32>) -> Result<()> {
+        if let Err(e) = self.model.swap_cache(cache) {
+            self.model.clear_cache();
+            self.cached.clear();
+            return Err(e);
+        }
+        self.cached = tokens;
+        Ok(())
+    }
+
+    /// Copy a longer prompt prefix than the active slot holds from another slot or from a saved cache, such as the
+    /// system prompt and tools another conversation already evaluated.
+    /// @param prompt - tokens of the new prompt.
+    /// @param own - prefix the active slot already shares with it.
+    fn borrow_prefix(&mut self, prompt: &[u32], own: usize) -> Result<()> {
+        let best = self
+            .parked
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, tokens))| (i, common_prefix(tokens, prompt)))
+            .max_by_key(|(_, n)| *n);
+        if let Some((i, n)) = best {
+            if n >= own + BORROW_MIN_TOKENS {
+                let copy = self.parked[i].1.deep_copy()?;
+                let tokens = self.parked[i].2.clone();
+                return self.adopt(copy, tokens);
+            }
+        }
+        let Some(folder) = self.prompt_cache.clone() else { return Ok(()) };
+        if prompt.len() < DISK_CACHE_MIN_TOKENS {
+            return Ok(());
+        }
+        let Ok(entries) = std::fs::read_dir(&folder) else { return Ok(()) };
+        let best = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "tokens"))
+            .filter_map(|p| read_tokens(&p).map(|t| (common_prefix(&t, prompt), t, p)))
+            .max_by_key(|(n, _, _)| *n);
+        let Some((n, tokens, path)) = best else { return Ok(()) };
+        if n < own + BORROW_MIN_TOKENS || n < DISK_CACHE_MIN_TOKENS / 2 {
+            return Ok(());
+        }
+        // A cache that no longer reads, for example after an engine upgrade, is deleted rather than reported.
+        match self.model.load_cache(&path.with_extension("safetensors")) {
+            Ok(cache) if cache.len() == tokens.len() => {
+                // Rewriting the tokens file marks the cache as recently used.
+                let _ = std::fs::write(&path, tokens.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<u8>>());
+                self.adopt(cache, tokens)
+            }
+            _ => {
+                let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_file(path.with_extension("safetensors"));
+                Ok(())
+            }
+        }
+    }
+
+    /// Save the active cache after a long prompt, keeping the [`DISK_CACHE_FILES`] most recently used per model.
+    fn save_prompt(&self) {
+        let Some(folder) = &self.prompt_cache else { return };
+        if self.cached.len() < DISK_CACHE_MIN_TOKENS || std::fs::create_dir_all(folder).is_err() {
+            return;
+        }
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.cached.hash(&mut h);
+        let stem = folder.join(format!("{:016x}", h.finish()));
+        let bytes: Vec<u8> = self.cached.iter().flat_map(|t| t.to_le_bytes()).collect();
+        // Tensors first, tokens last: a tokens file exists only beside a complete tensor file.
+        let saved = self.model.save_cache(&stem.with_extension("safetensors")).is_ok() && std::fs::write(stem.with_extension("tokens"), bytes).is_ok();
+        if !saved {
+            let _ = std::fs::remove_file(stem.with_extension("safetensors"));
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(folder) else { return };
+        let mut saved: Vec<(std::time::SystemTime, PathBuf)> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "tokens"))
+            .filter_map(|p| std::fs::metadata(&p).and_then(|m| m.modified()).ok().map(|t| (t, p)))
+            .collect();
+        saved.sort();
+        while saved.len() > DISK_CACHE_FILES {
+            let (_, p) = saved.remove(0);
+            let _ = std::fs::remove_file(&p);
+            let _ = std::fs::remove_file(p.with_extension("safetensors"));
+        }
     }
 
     /// [`Engine::load`], reporting each loaded layer.
@@ -263,7 +389,7 @@ impl Engine {
         let context_length = context_length.unwrap_or(trained.min(8192)).clamp(256, trained.max(256));
         Ok(Self {
             facts, context_length, model, tok, template, cached: Vec::new(),
-            active_slot: String::new(), parked: Vec::new(), max_slots: max_slots.max(1),
+            active_slot: String::new(), parked: Vec::new(), max_slots: max_slots.max(1), prompt_cache: None,
         })
     }
 
@@ -331,7 +457,9 @@ impl Engine {
             .into());
         }
         // Reuse the KV cache for the longest shared prefix; always re-evaluate at least one token.
-        let mut shared = self.cached.iter().zip(&prompt).take_while(|(a, b)| a == b).count();
+        let own = common_prefix(&self.cached, &prompt);
+        self.borrow_prefix(&prompt, own)?;
+        let mut shared = common_prefix(&self.cached, &prompt);
         if shared == prompt.len() {
             shared -= 1;
         }
@@ -351,6 +479,10 @@ impl Engine {
         }
         self.model.checkpoint();
         let prefill = prefill_started.elapsed();
+        // Save prompts that took real work to evaluate, so the next conversation or run can start from them.
+        if prompt.len() - shared >= DISK_CACHE_MIN_TOKENS / 2 {
+            self.save_prompt();
+        }
         let decode_started = Instant::now();
         let mut last_report = decode_started;
         let mut sampler = Sampler::new(req.sampling);

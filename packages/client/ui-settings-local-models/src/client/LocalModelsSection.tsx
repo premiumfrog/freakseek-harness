@@ -102,7 +102,9 @@ export function LocalModelsSection({
           )}
           {model.settings !== undefined && (
             <div className={css.modelFacts}>
-              <span>{t('card.saved', { context: model.settings.contextLength === undefined ? t('card.defaultValue') : `${String(Math.round(model.settings.contextLength / 1024))}k` })}</span>
+              <span>{model.settings.contextLength === undefined
+                ? t('card.savedDefault')
+                : t('card.saved', { tokens: Math.round(model.settings.contextLength / 1024) })}</span>
               {model.settings.askOnLoad && <span>{t('card.asks')}</span>}
             </div>
           )}

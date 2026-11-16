@@ -161,13 +161,16 @@ export class EngineProcess {
    * @param contextLength - requested context window in tokens.
    * @param slots - KV cache slots the engine keeps.
    * @param placement - compute device and offloaded layer count; `gpuLayers` omitted offloads every layer.
+   * @param promptCacheDir - folder of saved prompt caches; `undefined` saves none.
    * @param onProgress - receives layer-loading progress.
    * @returns loaded model facts.
    */
   load(
-    path: string, contextLength: number, slots: number, placement: EnginePlacement, onProgress?: (progress: EngineProgress) => void,
+    path: string, contextLength: number, slots: number, placement: EnginePlacement, promptCacheDir?: string,
+    onProgress?: (progress: EngineProgress) => void,
   ): Promise<EngineLoaded> {
-    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots, ...placement }, (line) => {
+    const cache = promptCacheDir === undefined ? {} : { promptCacheDir }
+    return this.request<EngineLoaded>({ op: 'load', path, contextLength, slots, ...placement, ...cache }, (line) => {
       if (line.type === 'progress') onProgress?.(line)
     }).result
   }

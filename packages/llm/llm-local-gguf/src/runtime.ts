@@ -58,6 +58,8 @@ export interface RuntimeSettings {
   modelSettingsFile(): string
   /** Minutes without a generation after which the loaded model is released; 0 keeps it loaded. */
   idleUnloadMinutes(): number
+  /** Folder of saved prompt caches; `undefined` saves none. */
+  promptCacheDir(): string | undefined
 }
 
 /** Header structure for model cards; absent when the engine could not read the header. */
@@ -595,7 +597,8 @@ export class LocalModelRuntime {
     this.loaded = undefined
     this.setState({ kind: 'loading', modelId })
     try {
-      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), placement, (progress) => {
+      const cacheDir = this.settings.promptCacheDir()
+      const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), placement, cacheDir, (progress) => {
         if (progress.stage === 'load') this.setActivity({ kind: 'loading', modelId, layersLoaded: progress.done, layers: progress.total })
       })
       this.loaded = { modelId, path: entry.path, contextLength: result.contextLength }

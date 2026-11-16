@@ -52,6 +52,10 @@ It also disables model-facing tools that one local model cannot use well; see [M
 
 [`dsh-offline-app`](../offline-app/README.md) removes the Web app's account, telemetry, and plugin-installation rows for the desktop app, which also confines its own Electron session to loopback and local resources, covering update checks and spell-check dictionary downloads.
 
+### Compaction for local context windows
+
+The bundle sizes automatic compaction for local windows of 8k to 256k tokens: a conversation is summarized at 75% of the window, less the reply reservation and 2,048 tokens of headroom, keeping the newest 20% verbatim. The shared default headroom of 65,536 tokens exceeds a 32k window and leaves no budget.
+
 <a id="model-experience"></a>
 ## Model Experience
 

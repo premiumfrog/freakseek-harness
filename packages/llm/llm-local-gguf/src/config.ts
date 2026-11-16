@@ -69,6 +69,8 @@ export interface Config {
   autoLoadLast: boolean
   /** Minutes without a generation after which the loaded model is released; 0 keeps it loaded. */
   idleUnloadMinutes: Volatile<number>
+  /** Save long prompts' caches beside the imported-models list and reuse them in later conversations and runs. */
+  promptCache: boolean
 }
 
 export const Config = z.object({
@@ -91,6 +93,7 @@ export const Config = z.object({
   hiddenToolProperties: z.array(z.string()).default(['timeoutMs']).volatile(),
   autoLoadLast: z.boolean().default(false),
   idleUnloadMinutes: z.number().step(1).min(0).max(10_080).default(30).volatile(),
+  promptCache: z.boolean().default(true),
   thinking: z.boolean().volatile(),
   shutdownGraceMillis: z.number().step(1).min(0).max(60_000).default(3000),
   importedModelsFile: z.string(),
@@ -293,5 +296,6 @@ export function runtimeSettingsOf(
     shutdownGraceMillis: () => config.shutdownGraceMillis,
     modelSettingsFile: () => resolveModelSettingsFile(importsFile()),
     idleUnloadMinutes: () => config.idleUnloadMinutes.get(),
+    promptCacheDir: () => (config.promptCache ? join(dirname(importsFile()), 'prompt-cache') : undefined),
   }
 }

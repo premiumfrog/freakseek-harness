@@ -91,6 +91,17 @@
     applyPatch: false
     readImage: !!js process.env.DSH_LOCAL_FULL_TOOLS === '1'
 
+# Automatic compaction sized for local context windows (8k to 256k tokens): the
+# default 65,536-token headroom exceeds a 32k window and would leave no budget.
+# A conversation is summarized once it reaches 75% of the window, less the reply
+# reservation and 2,048 tokens, keeping the newest 20% verbatim.
+- id: compaction-basic
+  config:
+    thresholdRatio: 0.75
+    headroomTokens: 2048
+    maxTokens: 2048
+    retainRatio: 0.2
+
 # New conversations start on the local route; loading a model on the
 # Local models page saves it here.
 - id: agent-default-model

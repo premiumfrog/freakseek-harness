@@ -192,3 +192,36 @@ fn slots_keep_prefixes_across_interleaved_requests() {
     assert!(e.child.wait().unwrap().success());
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
+
+#[test]
+fn long_prompts_are_reused_across_slots_and_processes() {
+    let path = common::write_model("qwen3", false, true);
+    let cache_dir = path.parent().unwrap().join("prompt-cache");
+    let system = "You are a careful assistant. ".repeat(48);
+    let request = |id: &str, slot: &str, user: &str| json!({
+        "id": id, "op": "generate", "maxTokens": 2, "slot": slot,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "sampling": {"temperature": 0.0, "repeatPenalty": 1.0},
+    });
+    let start_of = |lines: Vec<Value>| { let dump = format!("{lines:?}"); lines.into_iter().find(|v| v["type"] == "start").unwrap_or_else(|| panic!("no start event: {dump}")) };
+    let mut e = Engine::spawn();
+    e.send(json!({"id": "l", "op": "load", "path": path, "contextLength": 4096, "promptCacheDir": cache_dir}));
+    assert_eq!(e.progress_until_result("l").1["ok"], true);
+    e.send(request("a", "first", "hello"));
+    let first = start_of(e.until_result("a"));
+    assert_eq!(first["cachedTokens"], 0);
+    assert!(first["promptTokens"].as_u64().unwrap() >= 1024, "{first}");
+    // Another conversation copies the shared system prompt from the first slot.
+    e.send(request("b", "second", "something else entirely"));
+    let second = start_of(e.until_result("b"));
+    assert!(second["cachedTokens"].as_u64().unwrap() >= 1300, "{second}");
+    drop(e);
+    // A new process reads it from the prompt cache folder.
+    let mut e = Engine::spawn();
+    e.send(json!({"id": "l", "op": "load", "path": path, "contextLength": 4096, "promptCacheDir": cache_dir}));
+    assert_eq!(e.progress_until_result("l").1["ok"], true);
+    e.send(request("c", "third", "a new question"));
+    let third = start_of(e.until_result("c"));
+    assert!(third["cachedTokens"].as_u64().unwrap() >= 1300, "{third}");
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}

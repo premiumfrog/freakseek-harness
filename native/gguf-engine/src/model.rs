@@ -253,6 +253,78 @@ impl CacheSet {
     }
 }
 
+/// Recurrent checkpoints written to a saved prompt cache: the newest, which bound its size.
+const SAVED_CHECKPOINTS: usize = 4;
+
+impl CacheSet {
+    /// A copy that shares no storage with this set, so appending to one never changes the other.
+    pub fn deep_copy(&self) -> Result<Self> {
+        let layers = self
+            .layers
+            .iter()
+            .map(|l| {
+                Ok(match l {
+                    LayerCache::Kv(kv) => LayerCache::Kv(KvCache {
+                        k: kv.k.as_ref().map(Tensor::copy).transpose()?,
+                        v: kv.v.as_ref().map(Tensor::copy).transpose()?,
+                        len: kv.len,
+                    }),
+                    LayerCache::Rec(s) => LayerCache::Rec(s.clone()),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { layers, len: self.len, checkpoints: self.checkpoints.clone() })
+    }
+
+    /// Positions evaluated into this set.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether no position has been evaluated.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Write the set to a safetensors file: KV caches trimmed to their positions, recurrent states, and the
+    /// newest [`SAVED_CHECKPOINTS`] checkpoints.
+    /// @param path - destination file.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let cpu = Device::Cpu;
+        let mut out: std::collections::HashMap<String, Tensor> = std::collections::HashMap::new();
+        let vec = |v: &[f32]| Tensor::from_slice(v, v.len(), &cpu);
+        out.insert("len".into(), Tensor::new(&[self.len as u32], &cpu)?);
+        for (i, l) in self.layers.iter().enumerate() {
+            match l {
+                LayerCache::Kv(kv) => {
+                    if let (Some(k), Some(v)) = (&kv.k, &kv.v) {
+                        if kv.len > 0 {
+                            out.insert(format!("kv.{i}.k"), k.narrow(2, 0, kv.len)?.to_device(&cpu)?.contiguous()?);
+                            out.insert(format!("kv.{i}.v"), v.narrow(2, 0, kv.len)?.to_device(&cpu)?.contiguous()?);
+                        }
+                    }
+                }
+                LayerCache::Rec(s) => {
+                    let (conv, state) = s.parts();
+                    out.insert(format!("rec.{i}.conv"), vec(conv)?);
+                    out.insert(format!("rec.{i}.s"), vec(state)?);
+                }
+            }
+        }
+        let kept = &self.checkpoints[self.checkpoints.len().saturating_sub(SAVED_CHECKPOINTS)..];
+        out.insert("checkpoints".into(), Tensor::new(kept.iter().map(|c| c.0 as u32).collect::<Vec<_>>(), &cpu)?);
+        for (n, (_, states)) in kept.iter().enumerate() {
+            for (j, s) in states.iter().enumerate() {
+                let (conv, state) = s.parts();
+                out.insert(format!("ckpt.{n}.{j}.conv"), vec(conv)?);
+                out.insert(format!("ckpt.{n}.{j}.s"), vec(state)?);
+            }
+        }
+        candle_core::safetensors::save(&out, path)?;
+        Ok(())
+    }
+}
+
 /// Loaded model weights plus the cache of the current sequence.
 pub struct Model {
     pub hp: Hparams,
@@ -631,6 +703,55 @@ impl Model {
         let incoming = to(other, &mut self.layers.iter().map(|l| l.dev.clone()))?;
         let previous = std::mem::replace(&mut self.cache, incoming);
         to(previous, &mut std::iter::repeat(Device::Cpu))
+    }
+
+    /// Write the active cache to a file [`Model::load_cache`] reads.
+    /// @param path - destination safetensors file.
+    pub fn save_cache(&self, path: &Path) -> Result<()> {
+        self.cache.save(path)
+    }
+
+    /// Read a cache set written by [`CacheSet::save`] for this model.
+    /// @param path - safetensors file.
+    /// @returns the set in system memory; activate it with [`Model::swap_cache`].
+    pub fn load_cache(&self, path: &Path) -> Result<CacheSet> {
+        let t = candle_core::safetensors::load(path, &Device::Cpu)?;
+        let get = |name: &str| t.get(name).with_context(|| format!("saved prompt cache has no `{name}`"));
+        let floats = |name: &str| -> Result<Vec<f32>> { Ok(get(name)?.to_dtype(DType::F32)?.to_vec1::<f32>()?) };
+        let len = get("len")?.to_vec1::<u32>()?.first().copied().unwrap_or(0) as usize;
+        let mut set = self.empty_cache();
+        let mut dims = Vec::new();
+        for (i, (l, layer)) in set.layers.iter_mut().zip(&self.layers).enumerate() {
+            match (l, &layer.mixer) {
+                (LayerCache::Kv(kv), _) => {
+                    if let (Some(k), Some(v)) = (t.get(&format!("kv.{i}.k")), t.get(&format!("kv.{i}.v"))) {
+                        if k.dim(2)? != len || v.dim(2)? != len {
+                            bail!("saved prompt cache layer {i} holds {} positions, not {len}", k.dim(2)?);
+                        }
+                        *kv = KvCache { k: Some(k.clone()), v: Some(v.clone()), len };
+                    }
+                }
+                (LayerCache::Rec(s), Mixer::Delta(d)) => {
+                    *s = RecState::from_parts(&d.dims, floats(&format!("rec.{i}.conv"))?, floats(&format!("rec.{i}.s"))?)
+                        .with_context(|| format!("saved prompt cache layer {i} does not match the model"))?;
+                    dims.push(d.dims);
+                }
+                _ => bail!("saved prompt cache does not match the model's layers"),
+            }
+        }
+        set.len = len;
+        for (n, pos) in get("checkpoints")?.to_vec1::<u32>()?.into_iter().enumerate() {
+            let states = dims
+                .iter()
+                .enumerate()
+                .map(|(j, d)| {
+                    RecState::from_parts(d, floats(&format!("ckpt.{n}.{j}.conv"))?, floats(&format!("ckpt.{n}.{j}.s"))?)
+                        .context("saved prompt cache checkpoint does not match the model")
+                })
+                .collect::<Result<Vec<_>>>()?;
+            set.checkpoints.push((pos as usize, states));
+        }
+        Ok(set)
     }
 
     /// Discard the active cache.
