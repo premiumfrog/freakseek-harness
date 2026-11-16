@@ -43,6 +43,7 @@ enum Command {
         thinking: Option<bool>,
         #[serde(default)]
         slot: String,
+        tool_grammar: Option<bool>,
     },
     Cancel { target: String },
     Shutdown,
@@ -117,12 +118,12 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
                     None => json!({ "loaded": false }),
                 },
             ),
-            Command::Generate { messages, tools, max_tokens, stop, sampling, thinking, slot } => {
+            Command::Generate { messages, tools, max_tokens, stop, sampling, thinking, slot, tool_grammar } => {
                 let Some(e) = engine.as_mut() else {
                     out.fail(id, &EngineError { code: "NO_MODEL", message: "no model is loaded".into() }.into());
                     continue;
                 };
-                let req = Request { messages: &messages, tools: &tools, max_tokens: max_tokens.unwrap_or(usize::MAX), stop, sampling, thinking, slot };
+                let req = Request { messages: &messages, tools: &tools, max_tokens: max_tokens.unwrap_or(usize::MAX), stop, sampling, thinking, slot, tool_grammar: tool_grammar.unwrap_or(true) };
                 let mut emit = |ev: Event| match ev {
                     Event::Start { prompt_tokens, cached_tokens, opens_reasoning } => out.send(json!({
                         "id": id, "type": "start", "promptTokens": prompt_tokens, "cachedTokens": cached_tokens, "opensReasoning": opens_reasoning,

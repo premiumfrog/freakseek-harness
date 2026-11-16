@@ -10,6 +10,7 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::device::Placement;
+use crate::grammar::ToolCallGuard;
 use crate::model::{hparams, KvCache, Model};
 use crate::sampler::{Sampler, SamplingParams};
 use crate::template::ChatTemplate;
@@ -98,6 +99,8 @@ pub struct Request<'a> {
     pub thinking: Option<bool>,
     /// Cache slot: requests in one slot reuse each other's prompt prefix.
     pub slot: String,
+    /// Constrain each `<tool_call>` body to a declared tool and its parameter schema.
+    pub tool_grammar: bool,
 }
 
 /// Generation lifecycle notifications.
@@ -246,6 +249,7 @@ impl Engine {
             self.cached.extend_from_slice(chunk);
         }
         let mut sampler = Sampler::new(req.sampling);
+        let mut guard = if req.tool_grammar { ToolCallGuard::new(req.tools, rendered.opens_reasoning) } else { None };
         let mut utf8 = Utf8Stream::default();
         let mut pending = String::new();
         let max_stop = req.stop.iter().map(String::len).max().unwrap_or(0);
@@ -258,12 +262,19 @@ impl Engine {
             if produced >= req.max_tokens || self.cached.len() >= self.context_length {
                 break Finish::Length;
             }
+            if let Some(guard) = &guard {
+                guard.constrain(&mut logits, &|id| self.tok.token_bytes(id), &|id| self.tok.eog.contains(&id));
+            }
             let next = sampler.sample(&mut logits, &self.cached);
             produced += 1;
             if self.tok.eog.contains(&next) {
                 break Finish::Stop;
             }
-            let mut piece = utf8.push(&self.tok.token_bytes(next));
+            let bytes = self.tok.token_bytes(next);
+            if let Some(guard) = &mut guard {
+                guard.advance(&bytes);
+            }
+            let mut piece = utf8.push(&bytes);
             if first_piece && !piece.is_empty() {
                 first_piece = false;
                 // SentencePiece models mark word starts with a space the reply does not begin with.

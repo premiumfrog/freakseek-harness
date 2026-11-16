@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import type { Volatile } from '@deepseek-ai/cordis'
 import { expandHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import z from '@deepseek-ai/schemastery'
+import { samplingDefaults, type SamplingModelFacts } from './sampling-defaults.ts'
 import type { EngineCandidate, EnginePlacement, EngineSampling } from './types.ts'
 
 /** Environment variable naming the engine executable. */
@@ -43,16 +44,20 @@ export interface Config {
   maxOutputTokens: Volatile<number>
   /** Inference threads; 0 uses every core. */
   threads: number
-  /** Sampling temperature; 0 selects greedy decoding. A request's own temperature overrides it. */
-  temperature: Volatile<number>
-  /** Candidates kept by top-k filtering; 0 keeps the whole vocabulary. */
-  topK: Volatile<number>
-  /** Cumulative probability kept by nucleus (top-p) filtering. */
-  topP: Volatile<number>
-  /** Candidates below this fraction of the most likely token's probability are dropped. */
-  minP: Volatile<number>
-  /** Penalty divisor for tokens among the last 64 generated; 1 disables it. */
-  repeatPenalty: Volatile<number>
+  /** Sampling temperature; 0 selects greedy decoding. A request's own temperature overrides it. Omitted uses the model family's default. */
+  temperature: Volatile<number | undefined>
+  /** Candidates kept by top-k filtering; 0 keeps the whole vocabulary. Omitted uses the model family's default. */
+  topK: Volatile<number | undefined>
+  /** Cumulative probability kept by nucleus (top-p) filtering. Omitted uses the model family's default. */
+  topP: Volatile<number | undefined>
+  /** Candidates below this fraction of the most likely token's probability are dropped. Omitted uses the model family's default. */
+  minP: Volatile<number | undefined>
+  /** Penalty divisor for tokens among the last 64 generated; 1 disables it. Omitted uses the model family's default. */
+  repeatPenalty: Volatile<number | undefined>
+  /** Constrain each `<tool_call>` body to a declared tool and its parameter schema while decoding. */
+  constrainToolCalls: Volatile<boolean>
+  /** Reasoning switch handed to chat templates as `enable_thinking`; omitted leaves the template's own default. */
+  thinking: Volatile<boolean | undefined>
   /** Milliseconds the engine gets to exit on shutdown before it is killed. */
   shutdownGraceMillis: number
   /** JSON list of GGUF files loaded from outside the model directories; omitted resolves to `$DSH_HOME/local-models/imported.json`. */
@@ -70,11 +75,13 @@ export const Config = z.object({
   gpuLayers: z.natural(),
   maxOutputTokens: z.number().step(1).min(1).max(1_048_576).default(4096).volatile(),
   threads: z.number().step(1).min(0).max(1024).default(0),
-  temperature: z.number().min(0).max(5).default(0.6).volatile(),
-  topK: z.number().step(1).min(0).max(100_000).default(40).volatile(),
-  topP: z.number().min(0).max(1).default(0.95).volatile(),
-  minP: z.number().min(0).max(1).default(0.05).volatile(),
-  repeatPenalty: z.number().min(0.5).max(3).default(1).volatile(),
+  temperature: z.number().min(0).max(5).volatile(),
+  topK: z.number().step(1).min(0).max(100_000).volatile(),
+  topP: z.number().min(0).max(1).volatile(),
+  minP: z.number().min(0).max(1).volatile(),
+  repeatPenalty: z.number().min(0.5).max(3).volatile(),
+  constrainToolCalls: z.boolean().default(true).volatile(),
+  thinking: z.boolean().volatile(),
   shutdownGraceMillis: z.number().step(1).min(0).max(60_000).default(3000),
   importedModelsFile: z.string(),
 })
@@ -195,17 +202,19 @@ export function resolveModelDirectories(
 }
 
 /**
- * Read the live sampling controls.
+ * Resolve the sampling controls for one model: each configured control, else the model family's default.
  * @param config - live configuration.
+ * @param facts - the requested model's facts; omitted for a model the catalog does not know.
  * @returns wire sampling controls.
  */
-export function samplingOf(config: Config): EngineSampling {
+export function samplingOf(config: Config, facts?: SamplingModelFacts): EngineSampling {
+  const family = samplingDefaults(facts)
   return {
-    temperature: config.temperature.get(),
-    topK: config.topK.get(),
-    topP: config.topP.get(),
-    minP: config.minP.get(),
-    repeatPenalty: config.repeatPenalty.get(),
+    temperature: config.temperature.get() ?? family.temperature,
+    topK: config.topK.get() ?? family.topK,
+    topP: config.topP.get() ?? family.topP,
+    minP: config.minP.get() ?? family.minP,
+    repeatPenalty: config.repeatPenalty.get() ?? family.repeatPenalty,
     repeatLastN: 64,
   }
 }

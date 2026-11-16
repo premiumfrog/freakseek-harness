@@ -2,6 +2,7 @@
 
 pub mod device;
 pub mod engine;
+pub mod grammar;
 pub mod model;
 pub mod sampler;
 pub mod template;

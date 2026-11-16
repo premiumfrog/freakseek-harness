@@ -55,7 +55,9 @@ The model id `default` selects the only supported model and fails with the list 
 | `gpuLayers` | all | Trailing transformer layers placed on the GPU; lower it when weights and the active KV cache exceed VRAM |
 | `maxOutputTokens` | `4096` | Output cap for requests that name none |
 | `threads` | `0` | Inference threads; `0` uses every core |
-| `temperature`, `topK`, `topP`, `minP`, `repeatPenalty` | `0.6`, `40`, `0.95`, `0.05`, `1` | Sampling controls; a request's `temperature` overrides the configured one |
+| `temperature`, `topK`, `topP`, `minP`, `repeatPenalty` | per model family | Sampling controls; each one left unset takes the [family default](#sampling-defaults), and a request's `temperature` overrides the configured one |
+| `thinking` | template default | Reasoning switch passed to chat templates as `enable_thinking` (Qwen 3 family); `false` skips the reasoning block and its tokens |
+| `constrainToolCalls` | `true` | Constrain each `<tool_call>` body to a declared tool and its parameter schema while decoding |
 | `shutdownGraceMillis` | `3000` | Time the engine gets to exit when the plugin stops |
 | `importedModelsFile` | `$DSH_HOME/local-models/imported.json` | `{"version":1,"files":[…]}` list of files loaded with `loadFile`; an unreadable or malformed list is reported as a problem and lists nothing |
 
@@ -93,6 +95,24 @@ Engine failures surface as `LlmError` codes: `CONTEXT_WINDOW_EXCEEDED` when the 
 
 The leading system messages merge into one `system` message, because most GGUF chat templates read only a leading one. Later system and developer text travels as user turns. Assistant reasoning is passed as `reasoning_content` and tool calls as `tool_calls` with parsed object arguments, the form Hugging Face templates expect. Tool results become `tool` messages named after their call. Images become a text placeholder because the route declares text-only input.
 
+<a id="sampling-defaults"></a>
+### Sampling defaults
+
+[`src/sampling-defaults.ts`](src/sampling-defaults.ts) chooses the controls a deployment leaves unset from the model's architecture, its name, and whether its template opens reasoning blocks. The values are each vendor's recommendation for precise work.
+
+| Family | `temperature` | `topP` | `topK` | `minP` | `repeatPenalty` |
+|---|---|---|---|---|---|
+| Qwen 3 and later with reasoning (`qwen3`, `qwen3moe`, `qwen35`, `qwen35moe`) | 0.6 | 0.95 | 20 | 0 | 1 |
+| Qwen 3 and later without reasoning | 0.7 | 0.8 | 20 | 0 | 1 |
+| Qwen 2 and 2.5 (`qwen2`) | 0.7 | 0.8 | 20 | 0 | 1.05 |
+| DeepSeek-R1 distills (by name) | 0.6 | 0.95 | 40 | 0 | 1 |
+| Llama (`llama`) | 0.6 | 0.9 | 40 | 0.05 | 1 |
+| Any other | 0.6 | 0.95 | 40 | 0.05 | 1 |
+
+### Constrained tool calls
+
+With `constrainToolCalls` on and tools declared, the request carries `toolGrammar: true`. From the moment the model writes `<tool_call>` outside a reasoning block, the engine masks every token that cannot continue `{"name": <declared tool>, "arguments": <object matching that tool's schema>}</tool_call>`: properties in declaration order, required ones present, declared types and enum values, no undeclared property. Text outside a call is unconstrained, and templates with another call format never trigger the constraint. The constraint cannot make a model start a call or choose sensible argument values.
+
 ### Output parsing
 
 The engine streams raw text. The parser recognizes `<think>…</think>` reasoning (including output that starts inside a reasoning block the template opened), Hermes and Qwen `<tool_call>{json}</tool_call>` calls, Mistral `[TOOL_CALLS][…]` arrays, and a Llama 3 reply that is one `{"name", "parameters"}` object naming a declared tool. Text that could still become a marker is held until it resolves, so stream boundaries never change the result.
@@ -126,7 +146,7 @@ The request history and tool declarations rendered through the model file's own 
 
 #### Token effect
 
-Every rendered character is counted by the model's own tokenizer; tool declarations add their JSON schemas to the prompt as the template places them. Usage reports uncached prompt tokens, reused prefix tokens, and generated tokens.
+Every rendered character is counted by the model's own tokenizer; tool declarations add their JSON schemas to the prompt as the template places them. Usage reports uncached prompt tokens, reused prefix tokens, and generated tokens. Constrained tool calls add no prompt tokens.
 
 #### KV Cache effect
 

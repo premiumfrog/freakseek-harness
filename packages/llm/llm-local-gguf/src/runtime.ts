@@ -409,8 +409,12 @@ export class LocalModelRuntime {
     return this.serial(() => this.loadNow(modelId))
   }
 
-  /** Catalog entry for an id; {@link DEFAULT_MODEL_ID} names the only supported model. */
-  private find(modelId: string): LocalModelEntry | undefined {
+  /**
+   * Catalog entry for an id; {@link DEFAULT_MODEL_ID} names the only supported model.
+   * @param modelId - catalog id.
+   * @returns the entry, or `undefined` when the last scan holds none.
+   */
+  find(modelId: string): LocalModelEntry | undefined {
     if (modelId !== DEFAULT_MODEL_ID) return this.all.find(e => e.id === modelId)
     const supported = this.entries.filter(e => e.supported)
     return supported.length === 1 ? supported[0] : undefined

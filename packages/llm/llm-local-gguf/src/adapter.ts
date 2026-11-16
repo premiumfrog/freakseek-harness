@@ -12,6 +12,7 @@ import { EngineError } from './engine-process.ts'
 import { OutputParser } from './output-parser.ts'
 import { engineMessages, engineTools } from './request.ts'
 import type { LocalModelRuntime } from './runtime.ts'
+import type { SamplingModelFacts } from './sampling-defaults.ts'
 import type { EngineSampling, EngineStart, LocalModelEntry } from './types.ts'
 
 /** Provider route id served by this adapter. */
@@ -19,7 +20,12 @@ export const LOCAL_PROVIDER = 'local'
 
 /** Live adapter inputs. */
 export interface LocalAdapterSettings {
-  sampling(): EngineSampling
+  /** Sampling controls for a model; `facts` is omitted for a model the catalog does not know. */
+  sampling(facts: SamplingModelFacts | undefined): EngineSampling
+  /** Whether tool-call bodies are constrained to the declared schemas while decoding. */
+  constrainToolCalls(): boolean
+  /** Reasoning switch for templates that read `enable_thinking`; `undefined` keeps the template default. */
+  thinking(): boolean | undefined
   maxOutputTokens(): number
 }
 
@@ -91,6 +97,7 @@ export class LocalGgufAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const tools = engineTools(options)
+    const thinking = this.settings.thinking()
     const queue: StreamChunk[] = []
     let wake: (() => void) | undefined
     let parser: OutputParser | undefined
@@ -104,7 +111,12 @@ export class LocalGgufAdapter extends LlmAdapter {
       stop: options.stop ?? [],
       // One slot per conversation and request kind, so a title or compaction request does not evict the conversation prefix.
       slot: slotOf(options),
-      sampling: { ...this.settings.sampling(), ...options.temperature === undefined ? {} : { temperature: options.temperature } },
+      sampling: {
+        ...this.settings.sampling(this.runtime.find(options.model)),
+        ...options.temperature === undefined ? {} : { temperature: options.temperature },
+      },
+      toolGrammar: tools.length > 0 && this.settings.constrainToolCalls(),
+      ...thinking === undefined ? {} : { thinking },
     }, {
       onStart: (s) => {
         start = s
