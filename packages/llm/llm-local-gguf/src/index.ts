@@ -59,6 +59,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerAdapter([LOCAL_PROVIDER], new LocalGgufAdapter(runtime, {
     sampling: facts => samplingOf(config, facts),
     constrainToolCalls: () => config.constrainToolCalls.get(),
+    hiddenToolProperties: () => config.hiddenToolProperties.get(),
     thinking: () => config.thinking.get(),
     maxOutputTokens: () => config.maxOutputTokens.get(),
   }))

@@ -25,9 +25,9 @@ A request line that is not valid JSON is answered with `id: null` and `BAD_REQUE
 | `hello` | — | `{ protocol, version, cuda }`; `cuda` is whether the build can use CUDA devices | Answered immediately |
 | `devices` | — | `{ cuda, minComputeCapability, devices: [{ ordinal, name, computeCapability, totalBytes, freeBytes, supported }] }`; `minComputeCapability` is `major * 10 + minor` of the kernels (75 for release builds), and `supported` marks devices that meet it. A CPU build, or a driver with no device, reports an empty list | Answered immediately |
 | `inspect` | `path` | Header facts: `name`, `architecture`, `supported`, `unsupportedReason`, `contextLength`, `parameterCount`, `fileType`, `fileBytes`, `hasChatTemplate`, `templateTools`, `templateReasoning` | Answered immediately, even during a generation |
-| `load` | `path`, optional `contextLength`, optional `slots` (default 4), optional `device` (`auto` default, `cpu`, `cuda`, `cuda:<n>`), optional `gpuLayers` (trailing layers on the GPU; default all) | `{ facts, contextLength, vocab, device, gpuLayers }`; the window is clamped to 256 … the trained length; `device` is `cpu` or `cuda:<n>` and `gpuLayers` counts offloaded layers | Queued |
+| `load` | `path`, optional `contextLength`, optional `slots` (default 4), optional `device` (`auto` default, `cpu`, `cuda`, `cuda:<n>`), optional `gpuLayers` (trailing layers on the GPU; default all) | `{ facts, contextLength, vocab, device, gpuLayers, gpuExperts, experts, vramTotalBytes, vramFreeBytes, loadMs, warning? }`; the window is clamped to 256 … the trained length; `device` is `cpu` or `cuda:<n>` and `gpuLayers` counts offloaded layers | Queued |
 | `unload` | — | `null` | Queued |
-| `status` | — | `{ loaded, path?, contextLength?, device?, gpuLayers? }` | Queued |
+| `status` | — | `{ loaded, path?, contextLength?, device?, gpuLayers?, gpuExperts?, experts?, vramTotalBytes?, vramFreeBytes?, cachedTokens? }` | Queued |
 | `generate` | `messages`, optional `tools`, `maxTokens`, `stop`, `sampling`, `thinking`, `slot` | `{ finishReason, promptTokens, cachedTokens, completionTokens }`; `finishReason` is `stop`, `length`, or `cancelled` | Queued |
 | `cancel` | `target` | `null` | Answered immediately; the target generation stops at its next token |
 | `shutdown` | — | `null` | Answered immediately; queued work is cancelled and the process exits |
@@ -47,3 +47,5 @@ Closing stdin has the same effect as `shutdown`.
 | `BAD_DEVICE` | `device` is not `auto`, `cpu`, `cuda`, or `cuda:<n>` |
 | `DEVICE_UNAVAILABLE` | `cuda` was requested from a build without CUDA, or the CUDA device could not be opened; `auto` falls back to the CPU instead, also for a GPU older than `minComputeCapability` |
 | `ENGINE_ERROR` | Any other failure, such as an unreadable file or a template error |
+
+A `generate` result carries `finishReason`, `promptTokens`, `cachedTokens`, `completionTokens`, `prefillMs`, `decodeMs`, `promptTokensPerSecond` (uncached prompt tokens), and `tokensPerSecond` (generated tokens). `gpuExperts` and `experts` count routed experts on the GPU and in the model; the `vram*` fields are `null` on the CPU. Before placing weights on a GPU, `load` compares that GPU's quantized matrix products with exact host products for the model's weight types. With `device` omitted or `auto`, a GPU that fails the comparison is replaced by the CPU and `warning` says why; with an explicit `cuda` device the load fails with `GPU_KERNEL_MISMATCH`. A forward pass that produces non-finite logits fails the request with `NUMERIC_FAILURE`.

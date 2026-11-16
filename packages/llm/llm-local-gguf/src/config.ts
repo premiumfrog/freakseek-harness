@@ -56,6 +56,8 @@ export interface Config {
   repeatPenalty: Volatile<number | undefined>
   /** Constrain each `<tool_call>` body to a declared tool and its parameter schema while decoding. */
   constrainToolCalls: Volatile<boolean>
+  /** Optional tool properties withheld from the model; small models fill them with harmful values, such as a 6 ms timeout. */
+  hiddenToolProperties: Volatile<string[]>
   /** Reasoning switch handed to chat templates as `enable_thinking`; omitted leaves the template's own default. */
   thinking: Volatile<boolean | undefined>
   /** Milliseconds the engine gets to exit on shutdown before it is killed. */
@@ -81,6 +83,7 @@ export const Config = z.object({
   minP: z.number().min(0).max(1).volatile(),
   repeatPenalty: z.number().min(0.5).max(3).volatile(),
   constrainToolCalls: z.boolean().default(true).volatile(),
+  hiddenToolProperties: z.array(z.string()).default(['timeoutMs']).volatile(),
   thinking: z.boolean().volatile(),
   shutdownGraceMillis: z.number().step(1).min(0).max(60_000).default(3000),
   importedModelsFile: z.string(),

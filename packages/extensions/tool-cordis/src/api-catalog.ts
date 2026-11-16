@@ -6413,6 +6413,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EngineDevice {\n    readonly ordinal: number;\n    readonly name: string;\n    readonly computeCapability: string;\n    readonly totalBytes: number;\n    readonly freeBytes: number;\n    readonly supported: boolean;\n}',
   },
   {
+    name: 'EngineFinishReason',
+    declaration: 'export type EngineFinishReason = \'stop\' | \'length\' | \'cancelled\';',
+  },
+  {
+    name: 'EngineOutcome',
+    declaration: 'export interface EngineOutcome {\n    readonly finishReason: EngineFinishReason;\n    readonly promptTokens: number;\n    readonly cachedTokens: number;\n    readonly completionTokens: number;\n    readonly prefillMs: number;\n    readonly decodeMs: number;\n    readonly promptTokensPerSecond: number;\n    readonly tokensPerSecond: number;\n}',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n    system?: never;\n}',
   },
@@ -7113,6 +7121,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LocalModelEntry {\n    readonly id: string;\n    readonly name: string;\n    readonly path: string;\n    readonly directory: string;\n    readonly fileBytes: number;\n    readonly architecture: string;\n    readonly supported: boolean;\n    readonly unsupportedReason?: string;\n    readonly trainedContextLength?: number;\n    readonly parameterCount: number;\n    readonly quantization?: string;\n    readonly tools: boolean;\n    readonly reasoning: boolean;\n    readonly collection?: string;\n}',
   },
   {
+    name: 'LocalModelLoadStats',
+    declaration: 'export interface LocalModelLoadStats {\n    readonly gpuExperts: number;\n    readonly experts: number;\n    readonly vramTotalBytes: number | null;\n    readonly vramFreeBytes: number | null;\n    readonly loadMs: number;\n    readonly warning?: string;\n    readonly lastRun?: EngineOutcome;\n}',
+  },
+  {
     name: 'LocalModelsActionResult',
     declaration: 'export type LocalModelsActionResult = {\n    readonly ok: true;\n    readonly snapshot: LocalModelsSnapshot;\n} | {\n    readonly ok: false;\n    readonly reason: string;\n    readonly snapshot: LocalModelsSnapshot;\n};',
   },
@@ -7126,7 +7138,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalModelsState',
-    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n    readonly device: string;\n    readonly gpuLayers: number;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
+    declaration: 'export type LocalModelsState = {\n    readonly kind: \'engine-unavailable\';\n    readonly reason: string;\n} | {\n    readonly kind: \'idle\';\n} | {\n    readonly kind: \'loading\';\n    readonly modelId: string;\n} | {\n    readonly kind: \'loaded\';\n    readonly modelId: string;\n    readonly contextLength: number;\n    readonly device: string;\n    readonly gpuLayers: number;\n    readonly stats: LocalModelLoadStats;\n} | {\n    readonly kind: \'failed\';\n    readonly modelId: string;\n    readonly reason: string;\n};',
   },
   {
     name: 'LogExporterOptions',

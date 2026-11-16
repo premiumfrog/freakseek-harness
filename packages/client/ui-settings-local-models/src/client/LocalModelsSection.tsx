@@ -46,6 +46,11 @@ function parameterCount(count: number): string {
   return `${Math.max(1, Math.round(count / 1e6))}M`
 }
 
+/** Bytes as gibibytes with one decimal, the unit GPU tools report memory in. */
+function gigabytes(bytes: number): string {
+  return (bytes / 2 ** 30).toFixed(1)
+}
+
 /** Render the section. */
 export function LocalModelsSection({
   t, useModels, refresh, load, loadFile, unload, setCollection, createCollection, setCopy,
@@ -78,6 +83,22 @@ export function LocalModelsSection({
             {model.reasoning && <Tag tone="neutral">{t('reasoning')}</Tag>}
           </div>
           {loaded && state?.kind === 'loaded' && <div className={css.modelStatus}>{state.device === 'cpu' ? t('inUse', { context: state.contextLength }) : t('inUseGpu', { context: state.contextLength, device: state.device, layers: state.gpuLayers })}</div>}
+          {loaded && state?.kind === 'loaded' && state.stats.warning !== undefined && <div className={css.modelProblem}>{t('statWarning', { reason: state.stats.warning })}</div>}
+          {loaded && state?.kind === 'loaded' && (
+            <div className={css.modelFacts}>
+              {state.stats.experts > 0 && <span>{t('statExperts', { gpu: state.stats.gpuExperts, total: state.stats.experts })}</span>}
+              {state.stats.vramTotalBytes !== null && state.stats.vramFreeBytes !== null && (
+                <span>{t('statVram', { used: gigabytes(state.stats.vramTotalBytes - state.stats.vramFreeBytes), total: gigabytes(state.stats.vramTotalBytes) })}</span>
+              )}
+              <span>{t('statLoad', { seconds: (state.stats.loadMs / 1000).toFixed(1) })}</span>
+              {state.stats.lastRun !== undefined && (
+                <span>{t('statPrompt', { tokens: state.stats.lastRun.promptTokens, cached: state.stats.lastRun.cachedTokens, rate: state.stats.lastRun.promptTokensPerSecond })}</span>
+              )}
+              {state.stats.lastRun !== undefined && (
+                <span>{t('statSpeed', { rate: state.stats.lastRun.tokensPerSecond, tokens: state.stats.lastRun.completionTokens })}</span>
+              )}
+            </div>
+          )}
           {!model.supported && <div className={css.modelProblem}>{t('unsupported', { reason: model.unsupportedReason ?? '' })}</div>}
           <div className={css.modelPath} title={model.path}>{t('fileName', { id: model.id })}</div>
         </div>

@@ -65,3 +65,11 @@ it('omits deferred tools', () => {
     ],
   })).toEqual([{ type: 'function', function: { name: 'a', description: 'A', parameters: { type: 'object' } } }])
 })
+
+it('withholds optional hidden properties and keeps required ones', () => {
+  const parameters = { type: 'object', properties: { command: { type: 'string' }, timeoutMs: { type: 'integer' } }, required: ['command'] }
+  const [hidden] = engineTools({ provider: 'local', model: 'm', messages: [], tools: [{ name: 'bash', description: 'd', parameters }] }, ['timeoutMs', 'command'])
+  expect(hidden?.function.parameters).toEqual({ type: 'object', properties: { command: { type: 'string' } }, required: ['command'] })
+  const [kept] = engineTools({ provider: 'local', model: 'm', messages: [], tools: [{ name: 'bash', description: 'd', parameters }] })
+  expect(kept?.function.parameters).toBe(parameters)
+})

@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use candle_core::quantized::gguf_file::Content;
@@ -87,6 +88,30 @@ pub struct Outcome {
     pub prompt_tokens: usize,
     pub cached_tokens: usize,
     pub completion_tokens: usize,
+    /// Milliseconds spent evaluating the uncached prompt tokens.
+    pub prefill_ms: u64,
+    /// Milliseconds spent generating.
+    pub decode_ms: u64,
+    /// Uncached prompt tokens evaluated per second; 0 when none were evaluated.
+    pub prompt_tokens_per_second: f64,
+    /// Generated tokens per second; 0 when none were generated.
+    pub tokens_per_second: f64,
+}
+
+impl Outcome {
+    fn new(finish_reason: Finish, prompt_tokens: usize, cached_tokens: usize, completion_tokens: usize, prefill: Duration, decode: Duration) -> Self {
+        let rate = |n: usize, d: Duration| if n == 0 || d.as_millis() == 0 { 0.0 } else { (n as f64 / d.as_secs_f64() * 10.0).round() / 10.0 };
+        Self {
+            finish_reason,
+            prompt_tokens,
+            cached_tokens,
+            completion_tokens,
+            prefill_ms: prefill.as_millis() as u64,
+            decode_ms: decode.as_millis() as u64,
+            prompt_tokens_per_second: rate(prompt_tokens - cached_tokens, prefill),
+            tokens_per_second: rate(completion_tokens, decode),
+        }
+    }
 }
 
 /// Parameters of one generation request.
@@ -241,15 +266,18 @@ impl Engine {
         let shared = self.model.truncate(shared);
         self.cached.truncate(shared);
         emit(Event::Start { prompt_tokens: prompt.len(), cached_tokens: shared, opens_reasoning: rendered.opens_reasoning });
+        let prefill_started = Instant::now();
         let mut logits = Vec::new();
         for chunk in prompt[shared..].chunks(PREFILL_CHUNK) {
             if cancel.load(Ordering::Relaxed) {
-                return Ok(Outcome { finish_reason: Finish::Cancelled, prompt_tokens: prompt.len(), cached_tokens: shared, completion_tokens: 0 });
+                return Ok(Outcome::new(Finish::Cancelled, prompt.len(), shared, 0, prefill_started.elapsed(), Duration::ZERO));
             }
             logits = self.model.forward(chunk)?;
             self.cached.extend_from_slice(chunk);
         }
         self.model.checkpoint();
+        let prefill = prefill_started.elapsed();
+        let decode_started = Instant::now();
         let mut sampler = Sampler::new(req.sampling);
         let mut guard = if req.tool_grammar { ToolCallGuard::new(req.tools, rendered.opens_reasoning) } else { None };
         let mut utf8 = Utf8Stream::default();
@@ -306,7 +334,7 @@ impl Engine {
         if !pending.is_empty() && finish != Finish::Cancelled {
             emit(Event::Delta(pending));
         }
-        Ok(Outcome { finish_reason: finish, prompt_tokens: prompt.len(), cached_tokens: shared, completion_tokens: produced })
+        Ok(Outcome::new(finish, prompt.len(), shared, produced, prefill, decode_started.elapsed()))
     }
 
     /// Wire label of the device running the offloaded layers, or `cpu`.
@@ -317,6 +345,16 @@ impl Engine {
     /// Layers running on the accelerator.
     pub fn offloaded_layers(&self) -> usize {
         self.model.offloaded_layers()
+    }
+
+    /// Routed experts on the accelerator and in total; `(0, 0)` without routed experts.
+    pub fn offloaded_experts(&self) -> (usize, usize) {
+        self.model.offloaded_experts()
+    }
+
+    /// Tokens held in the active cache slot.
+    pub fn cached_tokens(&self) -> usize {
+        self.cached.len()
     }
 
     /// Vocabulary size, for diagnostics.

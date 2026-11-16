@@ -45,7 +45,7 @@ The tests cover tokenizer parity, forward-pass parity, and the protocol:
 - `tests/tokenizer_reference.rs` compares tokenization with llama.cpp's `test-tokenizer-0` vocabularies (`llama-spm`, `llama-bpe`, `qwen2`, `phi-3`, `gpt-2`) when `DSH_GGUF_VOCAB_DIR` names a directory holding llama.cpp's `models/ggml-vocab-*.gguf{,.inp,.out}` files; it skips with a message otherwise.
 - `tests/protocol.rs` drives the built binary through hello, inspect, load, generate with cache reuse, cancel, unload, and shutdown.
 
-`--threads <n>` limits inference threads; `--version` prints the engine and protocol versions.
+`--threads <n>` limits inference threads; `--version` prints the engine and protocol versions. `--selftest <model.gguf>` evaluates the same tokens on the CPU and on the GPU and prints the first layer whose hidden state differs, or that both agree; it exits 1 on a difference or without a supported GPU.
 
 <a id="supported-models"></a>
 ## Supported models

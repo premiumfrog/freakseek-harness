@@ -24,6 +24,8 @@ export interface LocalAdapterSettings {
   sampling(facts: SamplingModelFacts | undefined): EngineSampling
   /** Whether tool-call bodies are constrained to the declared schemas while decoding. */
   constrainToolCalls(): boolean
+  /** Optional tool properties withheld from the model, which then run at the tool's default. */
+  hiddenToolProperties(): readonly string[]
   /** Reasoning switch for templates that read `enable_thinking`; `undefined` keeps the template default. */
   thinking(): boolean | undefined
   maxOutputTokens(): number
@@ -96,7 +98,7 @@ export class LocalGgufAdapter extends LlmAdapter {
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const tools = engineTools(options)
+    const tools = engineTools(options, this.settings.hiddenToolProperties())
     const thinking = this.settings.thinking()
     const queue: StreamChunk[] = []
     let wake: (() => void) | undefined

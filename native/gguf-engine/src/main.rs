@@ -92,13 +92,28 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
         match job.command {
             Command::Load { path, context_length, slots, device, gpu_layers } => {
                 engine = None;
-                let loaded = Placement::resolve(device.as_deref(), gpu_layers).and_then(|p| Engine::load(&path, context_length, slots.unwrap_or(4), &p));
+                let started = std::time::Instant::now();
+                let load = |spec: Option<&str>| Placement::resolve(spec, gpu_layers).and_then(|p| Engine::load(&path, context_length, slots.unwrap_or(4), &p));
+                let mut warning = None;
+                let mut loaded = load(device.as_deref());
+                // With no device preference, a GPU that computes wrong results gives way to the CPU.
+                if let Err(e) = &loaded {
+                    let mismatch = e.downcast_ref::<EngineError>().is_some_and(|e| e.code == "GPU_KERNEL_MISMATCH");
+                    if mismatch && matches!(device.as_deref(), None | Some("auto")) {
+                        warning = Some(e.to_string());
+                        loaded = load(Some("cpu"));
+                    }
+                }
                 match loaded {
                     Ok(e) => {
-                        out.ok(id, json!({
-                            "facts": e.facts, "contextLength": e.context_length, "vocab": e.vocab(),
-                            "device": e.device_label(), "gpuLayers": e.offloaded_layers(),
-                        }));
+                        let mut result = placement_facts(&e);
+                        result["facts"] = json!(e.facts);
+                        result["vocab"] = json!(e.vocab());
+                        result["loadMs"] = json!(started.elapsed().as_millis() as u64);
+                        if let Some(w) = warning {
+                            result["warning"] = json!(w);
+                        }
+                        out.ok(id, result);
                         engine = Some(e);
                     }
                     Err(e) => out.fail(id, &e),
@@ -111,10 +126,13 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
             Command::Status => out.ok(
                 id,
                 match &engine {
-                    Some(e) => json!({
-                        "loaded": true, "path": e.facts.path, "contextLength": e.context_length,
-                        "device": e.device_label(), "gpuLayers": e.offloaded_layers(),
-                    }),
+                    Some(e) => {
+                        let mut result = placement_facts(e);
+                        result["loaded"] = json!(true);
+                        result["path"] = json!(e.facts.path);
+                        result["cachedTokens"] = json!(e.cached_tokens());
+                        result
+                    }
                     None => json!({ "loaded": false }),
                 },
             ),
@@ -140,6 +158,80 @@ fn worker(rx: mpsc::Receiver<Job>, out: Out) {
     }
 }
 
+/// Where a loaded model runs: device, offloaded layers and experts, and the device's memory.
+fn placement_facts(e: &Engine) -> Json {
+    let (gpu_experts, experts) = e.offloaded_experts();
+    let label = e.device_label();
+    let memory = label.strip_prefix("cuda:").and_then(|n| n.parse::<usize>().ok()).and_then(|ordinal| {
+        dsh_gguf_engine::device::devices().ok()?.into_iter().find(|d| d.ordinal == ordinal)
+    });
+    json!({
+        "contextLength": e.context_length, "device": label, "gpuLayers": e.offloaded_layers(),
+        "gpuExperts": gpu_experts, "experts": experts,
+        "vramTotalBytes": memory.as_ref().map(|m| m.total_bytes), "vramFreeBytes": memory.as_ref().map(|m| m.free_bytes),
+    })
+}
+
+/// Run the same tokens through a host copy and an accelerator copy of a model and print where they diverge.
+/// @param path - GGUF file.
+/// @returns the process exit code: 0 when both agree, 1 when they diverge or the accelerator is unavailable.
+fn selftest(path: &std::path::Path) -> i32 {
+    use dsh_gguf_engine::model::Model;
+    let tokens: Vec<u32> = (1..=24).collect();
+    let run = |placement: &Placement| -> anyhow::Result<(Vec<f32>, Vec<f32>, String)> {
+        let content = candle_core::quantized::gguf_file::Content::read(&mut std::fs::File::open(path)?)?;
+        let mut model = Model::load(path, &content, placement)?;
+        model.trace = Some(Vec::new());
+        let mut logits = model.forward(&tokens)?;
+        for t in [5u32, 9, 13] {
+            logits = model.forward(&[t])?;
+        }
+        let (gpu, all) = model.offloaded_experts();
+        let label = format!("{} ({} layers, {gpu}/{all} experts offloaded)", model.device_label(), model.offloaded_layers());
+        Ok((model.trace.take().unwrap_or_default(), logits, label))
+    };
+    let top = |v: &[f32]| v.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map_or(0, |p| p.0);
+    println!("selftest: evaluating on the CPU");
+    let host = match run(&Placement::cpu()) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("selftest: CPU run failed: {e:#}");
+            return 1;
+        }
+    };
+    println!("selftest: CPU top token {}, finite logits: {}", top(&host.1), host.1.iter().all(|l| l.is_finite()));
+    let accel = match Placement::resolve(Some("auto"), None).and_then(|p| if p.device.is_cpu() { anyhow::bail!("no supported GPU") } else { run(&p) }) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("selftest: GPU run unavailable: {e:#}");
+            return 1;
+        }
+    };
+    println!("selftest: evaluating on {}", accel.2);
+    let layers = host.0.len() / 4;
+    let mut first_bad = None;
+    for (i, (a, b)) in host.0.iter().zip(&accel.0).enumerate() {
+        let error = (a - b).abs() / a.abs().max(1e-6);
+        if !(error <= 0.05) && first_bad.is_none() {
+            first_bad = Some((i / layers.max(1), i % layers.max(1), *a, *b));
+        }
+    }
+    match first_bad {
+        Some((step, layer, a, b)) => {
+            println!("selftest: FAILED at step {step}, layer {layer}: hidden-state norm {a} on the CPU, {b} on the GPU");
+            1
+        }
+        None if top(&host.1) != top(&accel.1) => {
+            println!("selftest: FAILED: top token {} on the CPU, {} on the GPU", top(&host.1), top(&accel.1));
+            1
+        }
+        None => {
+            println!("selftest: passed; CPU and GPU agree on every layer");
+            0
+        }
+    }
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -148,6 +240,13 @@ fn main() {
                 if let Some(n) = args.next() {
                     std::env::set_var("RAYON_NUM_THREADS", n);
                 }
+            }
+            "--selftest" => {
+                let Some(path) = args.next() else {
+                    eprintln!("dsh-gguf-engine: --selftest needs a model path");
+                    std::process::exit(2);
+                };
+                std::process::exit(selftest(std::path::Path::new(&path)));
             }
             "--version" => {
                 println!("dsh-gguf-engine {} protocol {PROTOCOL_VERSION}", env!("CARGO_PKG_VERSION"));

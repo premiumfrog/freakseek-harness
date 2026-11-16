@@ -17,7 +17,8 @@ use candle_core::quantized::gguf_file::Content;
 use candle_core::quantized::{ggml_file::qtensor_from_ggml, QMatMul, QTensor};
 use candle_core::{DType, Device, Module, Tensor};
 
-use crate::device::Placement;
+use crate::device::{ensure_kernels, Placement};
+use crate::engine::EngineError;
 use crate::moe::{self, Expert, Moe, SharedExpert};
 use crate::recurrent::{DeltaDims, DeltaNet, RecState};
 
@@ -245,6 +246,8 @@ pub struct Model {
     placement: Placement,
     /// Where expert use counts are saved for the next load; `None` without routed experts.
     profile: Option<PathBuf>,
+    /// When set, [`Model::forward`] appends the last position's hidden-state norm after each layer.
+    pub trace: Option<Vec<f32>>,
 }
 
 fn md_u32(c: &Content, key: &str) -> Option<usize> {
@@ -423,6 +426,12 @@ impl Model {
         let cpu = Device::Cpu;
         let mut l = Loader { c: content, r: BufReader::new(File::open(path)?), dev: cpu.clone() };
         let is_moe = hp.n_expert > 0;
+        if !placement.device.is_cpu() {
+            let mut dtypes: Vec<_> = content.tensor_infos.values().filter(|i| i.shape.rank() >= 2).map(|i| i.ggml_dtype).collect();
+            dtypes.sort_by_key(|d| format!("{d:?}"));
+            dtypes.dedup();
+            ensure_kernels(&placement.device, &dtypes)?;
+        }
         let profile = is_moe.then(|| PathBuf::from(format!("{}.routing", path.display())));
         // With routed experts and no explicit layer count, every layer's shared weights go to the
         // accelerator and experts fill the remaining memory, most used first.
@@ -547,7 +556,7 @@ impl Model {
                 *f /= s;
             }
         }
-        let mut model = Self { hp, embd, layers, out_norm, output, cache: CacheSet { layers: Vec::new(), len: 0, checkpoints: Vec::new() }, inv_freq, out_dev, placement: placement.clone(), profile };
+        let mut model = Self { hp, embd, layers, out_norm, output, cache: CacheSet { layers: Vec::new(), len: 0, checkpoints: Vec::new() }, inv_freq, out_dev, placement: placement.clone(), profile, trace: None };
         model.cache = model.empty_cache();
         Ok(model)
     }
@@ -696,6 +705,9 @@ impl Model {
                 Ffn::Moe(m) => m.forward(&h, &layer.dev)?,
             };
             x = (x + y)?;
+            if let Some(trace) = &mut self.trace {
+                trace.push(x.narrow(1, t - 1, 1)?.to_dtype(DType::F32)?.sqr()?.sum_all()?.to_scalar::<f32>()?.sqrt());
+            }
         }
         self.cache.len += t;
         if t > 1 || self.cache.len % CHECKPOINT_INTERVAL == 0 {
@@ -703,8 +715,12 @@ impl Model {
         }
         let last = x.narrow(1, t - 1, 1)?.to_device(&self.out_dev)?;
         let last = candle_nn::ops::rms_norm(&last, &self.out_norm, eps)?;
-        let logits = self.output.forward(&last)?.squeeze(0)?.squeeze(0)?;
-        Ok(logits.to_dtype(DType::F32)?.to_vec1::<f32>()?)
+        let logits = self.output.forward(&last)?.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
+        // Sampling from non-finite logits repeats one token forever; fail the request instead.
+        if self.trace.is_none() && logits.iter().any(|l| !l.is_finite()) {
+            return Err(EngineError { code: "NUMERIC_FAILURE", message: format!("the model produced non-finite logits on {}; reload it on the CPU", self.placement.label()) }.into());
+        }
+        Ok(logits)
     }
 
     /// Vocabulary size of the output head.

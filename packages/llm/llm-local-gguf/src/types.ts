@@ -45,6 +45,18 @@ export interface EngineLoaded {
   readonly device: string
   /** Layers running on that device; 0 on the CPU. */
   readonly gpuLayers: number
+  /** Routed experts on that device; 0 for a model without routed experts. */
+  readonly gpuExperts: number
+  /** Routed experts in the model; 0 for a model without them. */
+  readonly experts: number
+  /** Memory of the GPU in use; `null` on the CPU. */
+  readonly vramTotalBytes: number | null
+  /** Free memory of that GPU after loading; `null` on the CPU. */
+  readonly vramFreeBytes: number | null
+  /** Milliseconds the load took. */
+  readonly loadMs: number
+  /** Why the engine loaded on the CPU although a GPU was available. */
+  readonly warning?: string
 }
 
 /** Engine failure body. */
@@ -76,6 +88,26 @@ export interface EngineOutcome {
   readonly promptTokens: number
   readonly cachedTokens: number
   readonly completionTokens: number
+  /** Milliseconds spent evaluating the uncached prompt tokens. */
+  readonly prefillMs: number
+  /** Milliseconds spent generating. */
+  readonly decodeMs: number
+  /** Uncached prompt tokens evaluated per second; 0 when none were evaluated. */
+  readonly promptTokensPerSecond: number
+  /** Generated tokens per second; 0 when none were generated. */
+  readonly tokensPerSecond: number
+}
+
+/** Placement and timing of the loaded model, for configuration surfaces. */
+export interface LocalModelLoadStats {
+  readonly gpuExperts: number
+  readonly experts: number
+  readonly vramTotalBytes: number | null
+  readonly vramFreeBytes: number | null
+  readonly loadMs: number
+  readonly warning?: string
+  /** The most recent finished generation; absent until one finishes. */
+  readonly lastRun?: EngineOutcome
 }
 
 /** OpenAI-style message the engine passes to the model's chat template. */
@@ -153,7 +185,7 @@ export type LocalModelsState =
   | { readonly kind: 'engine-unavailable'; readonly reason: string }
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly modelId: string }
-  | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number; readonly device: string; readonly gpuLayers: number }
+  | { readonly kind: 'loaded'; readonly modelId: string; readonly contextLength: number; readonly device: string; readonly gpuLayers: number; readonly stats: LocalModelLoadStats }
   | { readonly kind: 'failed'; readonly modelId: string; readonly reason: string }
 
 /** One CUDA device as the engine's `devices` operation reports it. */

@@ -58,6 +58,7 @@ The model id `default` selects the only supported model and fails with the list 
 | `temperature`, `topK`, `topP`, `minP`, `repeatPenalty` | per model family | Sampling controls; each one left unset takes the [family default](#sampling-defaults), and a request's `temperature` overrides the configured one |
 | `thinking` | template default | Reasoning switch passed to chat templates as `enable_thinking` (Qwen 3 family); `false` skips the reasoning block and its tokens |
 | `constrainToolCalls` | `true` | Constrain each `<tool_call>` body to a declared tool and its parameter schema while decoding |
+| `hiddenToolProperties` | `['timeoutMs']` | Optional tool properties withheld from the model, so the tool's default applies. Small models fill optional numbers with harmful values, such as a shell timeout of a few milliseconds. Required properties are never withheld. |
 | `shutdownGraceMillis` | `3000` | Time the engine gets to exit when the plugin stops |
 | `importedModelsFile` | `$DSH_HOME/local-models/imported.json` | `{"version":1,"files":[…]}` list of files loaded with `loadFile`; an unreadable or malformed list is reported as a problem and lists nothing |
 

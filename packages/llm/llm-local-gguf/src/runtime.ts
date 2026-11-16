@@ -445,7 +445,14 @@ export class LocalModelRuntime {
     try {
       const result = await engine.load(entry.path, contextLength, this.settings.cacheSlots(), this.settings.placement())
       this.loaded = { modelId, path: entry.path, contextLength: result.contextLength }
-      this.setState({ kind: 'loaded', modelId, contextLength: result.contextLength, device: result.device, gpuLayers: result.gpuLayers })
+      this.setState({
+        kind: 'loaded', modelId, contextLength: result.contextLength, device: result.device, gpuLayers: result.gpuLayers,
+        stats: {
+          gpuExperts: result.gpuExperts, experts: result.experts,
+          vramTotalBytes: result.vramTotalBytes, vramFreeBytes: result.vramFreeBytes,
+          loadMs: result.loadMs, ...(result.warning === undefined ? {} : { warning: result.warning }),
+        },
+      })
       return result.contextLength
     } catch (error) {
       this.setState({ kind: 'failed', modelId, reason: (error as Error).message })
@@ -477,7 +484,11 @@ export class LocalModelRuntime {
     return this.serial(async () => {
       await this.loadNow(modelId)
       const engine = await this.engine()
-      return engine.generate(request, handlers, signal)
+      const outcome = await engine.generate(request, handlers, signal)
+      if (this.state.kind === 'loaded' && this.state.modelId === modelId && outcome.finishReason !== 'cancelled') {
+        this.setState({ ...this.state, stats: { ...this.state.stats, lastRun: outcome } })
+      }
+      return outcome
     })
   }
 

@@ -74,3 +74,26 @@ fn qwen35_matches_llama_cpp() {
 fn qwen35moe_matches_llama_cpp() {
     parity("qwen35moe");
 }
+
+/// Parity on a downloaded model: `DSH_REAL_MODEL` names the GGUF file and `DSH_REAL_LOGITS`
+/// the llama.cpp logits for `PROMPT` then `DECODE`. Quantized kernels differ in rounding, so
+/// the check is the top token and a loose tolerance.
+#[test]
+#[ignore = "needs a downloaded model and llama.cpp logits"]
+fn real_model_matches_llama_cpp() {
+    let (Ok(model), Ok(logits)) = (std::env::var("DSH_REAL_MODEL"), std::env::var("DSH_REAL_LOGITS")) else { return };
+    let expected: Vec<Vec<f32>> =
+        std::fs::read_to_string(logits).unwrap().lines().map(|l| l.split_whitespace().map(|x| x.parse().unwrap()).collect()).collect();
+    let path = Path::new(&model);
+    let mut engine = Model::load(path, &content(path), &Placement::cpu()).unwrap();
+    let top = |v: &[f32]| v.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|p| p.0).unwrap();
+    let mut steps = vec![engine.forward(&PROMPT).unwrap()];
+    steps.extend(DECODE.iter().map(|t| engine.forward(&[*t]).unwrap()));
+    for (i, (got, want)) in steps.iter().zip(&expected).enumerate() {
+        let scale = want.iter().fold(0f32, |m, x| m.max(x.abs()));
+        let worst = got.iter().zip(want).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max);
+        println!("step {i}: top {} vs {}, max diff {worst} of scale {scale}", top(got), top(want));
+        assert_eq!(top(got), top(want), "step {i}: top token");
+        assert!(worst / scale < 0.05, "step {i}: max abs diff {worst} vs scale {scale}");
+    }
+}

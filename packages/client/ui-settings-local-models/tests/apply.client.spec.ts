@@ -15,7 +15,7 @@ const model = {
   supported: true, parameterCount: 7e9, tools: true, reasoning: false,
 }
 const idle = { state: { kind: 'idle' }, directories: ['/m'], models: [model], problems: [] }
-const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0 } }
+const loaded = { ...idle, state: { kind: 'loaded', modelId: 'qwen/q', contextLength: 8192, device: 'cpu', gpuLayers: 0, stats: { gpuExperts: 0, experts: 0, vramTotalBytes: null, vramFreeBytes: null, loadMs: 1 } } }
 const collected = {
   ...idle, collections: { root: '/m', active: '', items: [{ id: '', modelCount: 1 }, { id: 'coding', modelCount: 0 }] },
 }

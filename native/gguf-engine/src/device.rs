@@ -6,7 +6,8 @@
 //! embedding lookup stay on the CPU, so a model larger than VRAM still loads.
 
 use anyhow::Result;
-use candle_core::Device;
+use candle_core::quantized::{ggml_file::qtensor_from_ggml, GgmlDType, QMatMul, QTensor};
+use candle_core::{Device, Module, Tensor};
 use serde::Serialize;
 
 use crate::engine::EngineError;
@@ -131,6 +132,73 @@ pub fn devices() -> Result<Vec<DeviceInfo>> {
     Ok(Vec::new())
 }
 
+/// Largest relative error accepted between an accelerator's quantized product and the host's exact one.
+/// The accelerator kernels round activations to 8 bits, which stays well below this.
+const KERNEL_TOLERANCE: f32 = 0.08;
+
+/// Compare the accelerator's quantized matrix products with exact host products.
+/// @param dev - accelerator to check.
+/// @param dtypes - weight types to check; a type candle cannot quantize from floats is skipped.
+/// @returns per checked type, the worst error relative to the largest reference value.
+pub fn verify_quantized(dev: &Device, dtypes: &[GgmlDType]) -> Result<Vec<(GgmlDType, f32)>> {
+    const ROWS: usize = 64;
+    const COLS: usize = 512;
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut noise = |n: usize| -> Vec<f32> {
+        (0..n)
+            .map(|_| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((seed >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
+            })
+            .collect()
+    };
+    let weights = Tensor::from_vec(noise(ROWS * COLS), (ROWS, COLS), &Device::Cpu)?;
+    // One row, a small batch, and a prefill-sized batch take different kernels.
+    let inputs = [1usize, 6, 48].map(|b| Tensor::from_vec(noise(b * COLS), (b, COLS), &Device::Cpu));
+    let mut out = Vec::new();
+    for &dtype in dtypes {
+        let Ok(host) = QTensor::quantize(&weights, dtype) else { continue };
+        let exact = host.dequantize(&Device::Cpu)?.t()?;
+        let on_dev = QMatMul::from_qtensor(qtensor_from_ggml(dtype, &host.data()?, vec![ROWS, COLS], dev)?)?;
+        let mut worst = 0f32;
+        for x in &inputs {
+            let x = x.as_ref().map_err(|e| anyhow::anyhow!("{e}"))?;
+            let want = x.matmul(&exact)?.flatten_all()?.to_vec1::<f32>()?;
+            let got = on_dev.forward(&x.to_device(dev)?)?.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+            let scale = want.iter().fold(1e-6f32, |m, v| m.max(v.abs()));
+            let diff = got.iter().zip(&want).map(|(a, b)| if a.is_finite() { (a - b).abs() } else { f32::INFINITY }).fold(0f32, f32::max);
+            worst = worst.max(diff / scale);
+        }
+        out.push((dtype, worst));
+    }
+    Ok(out)
+}
+
+/// Check the accelerator's quantized kernels for a model's weight types before trusting them.
+/// A CUDA device whose batched kernels disagree with the host is retried with candle's
+/// per-row kernels; if those disagree too, loading on this device fails.
+/// @param dev - accelerator; the host passes without a check.
+/// @param dtypes - weight types the model uses.
+pub fn ensure_kernels(dev: &Device, dtypes: &[GgmlDType]) -> Result<()> {
+    if dev.is_cpu() {
+        return Ok(());
+    }
+    let failing = |checks: &[(GgmlDType, f32)]| -> Vec<String> {
+        checks.iter().filter(|c| !(c.1 <= KERNEL_TOLERANCE)).map(|c| format!("{:?} (error {:.2})", c.0, c.1)).collect()
+    };
+    #[cfg_attr(not(feature = "cuda"), allow(unused_mut))]
+    let mut bad = failing(&verify_quantized(dev, dtypes)?);
+    #[cfg(feature = "cuda")]
+    if !bad.is_empty() {
+        candle_core::quantized::cuda::set_force_dmmv(true);
+        bad = failing(&verify_quantized(dev, dtypes)?);
+    }
+    if bad.is_empty() {
+        return Ok(());
+    }
+    Err(EngineError { code: "GPU_KERNEL_MISMATCH", message: format!("this GPU computes wrong results for {}; update the NVIDIA driver or load on the CPU", bad.join(", ")) }.into())
+}
+
 fn cuda(ordinal: usize) -> Result<Device> {
     if !cuda_compiled() {
         return Err(EngineError { code: "DEVICE_UNAVAILABLE", message: "this engine was built without CUDA; rebuild with `--features cuda`".into() }.into());
@@ -154,6 +222,16 @@ mod tests {
         if !cuda_compiled() {
             assert!(devices().unwrap().is_empty());
         }
+    }
+
+    #[test]
+    fn host_kernels_match_exact_products() {
+        let checks = verify_quantized(&Device::Cpu, &[GgmlDType::Q8_0, GgmlDType::Q4_0, GgmlDType::Q3K, GgmlDType::Q5K, GgmlDType::F16]).unwrap();
+        assert!(!checks.is_empty());
+        for (dtype, error) in checks {
+            assert!(error < 0.03, "{dtype:?}: {error}");
+        }
+        ensure_kernels(&Device::Cpu, &[GgmlDType::Q8_0]).unwrap();
     }
 
     #[test]

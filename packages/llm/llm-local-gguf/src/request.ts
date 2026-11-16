@@ -110,12 +110,32 @@ export function engineMessages(options: GenerateOptions): EngineMessage[] {
 }
 
 /**
+ * Drop optional properties a local model should leave at the tool's default.
+ * @param parameters - a tool's JSON schema.
+ * @param hidden - property names to drop when the schema does not require them.
+ * @returns the schema without those properties; the input when none apply.
+ */
+function withoutOptional(parameters: unknown, hidden: readonly string[]): unknown {
+  if (typeof parameters !== 'object' || parameters === null || !('properties' in parameters)) return parameters
+  const schema = parameters as { readonly properties?: unknown; readonly required?: unknown }
+  if (typeof schema.properties !== 'object' || schema.properties === null) return parameters
+  const required = Array.isArray(schema.required) ? schema.required : []
+  const drop = hidden.filter(name => name in (schema.properties as object) && !required.includes(name))
+  if (drop.length === 0) return parameters
+  return { ...parameters, properties: Object.fromEntries(Object.entries(schema.properties).filter(([name]) => !drop.includes(name))) }
+}
+
+/**
  * Translate tool declarations, omitting deferred tools.
  * @param options - assembled request.
+ * @param hiddenProperties - optional property names removed from every tool's schema.
  * @returns OpenAI-style function declarations.
  */
-export function engineTools(options: GenerateOptions): EngineTool[] {
+export function engineTools(options: GenerateOptions, hiddenProperties: readonly string[] = []): EngineTool[] {
   return (options.tools ?? [])
     .filter(tool => tool.deferLoading !== true)
-    .map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }))
+    .map((tool) => {
+      const parameters = withoutOptional(tool.parameters, hiddenProperties) as typeof tool.parameters
+      return { type: 'function', function: { name: tool.name, description: tool.description, parameters } }
+    })
 }
