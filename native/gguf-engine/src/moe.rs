@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use candle_core::quantized::QMatMul;
 use candle_core::{DType, Device, Module, Tensor};
 
@@ -91,27 +91,36 @@ impl Moe {
             }
             None => Tensor::zeros((t, n_embd), x.dtype(), dev)?,
         };
-        // Rows cross to the host once, and only when a selected expert lives there.
-        let mut on_host: Option<Tensor> = None;
-        for (e, expert) in self.experts.iter().enumerate() {
-            if rows[e].is_empty() {
-                continue;
-            }
-            expert.hits.fetch_add(rows[e].len() as u32, Ordering::Relaxed);
+        let selected: Vec<usize> = (0..n).filter(|e| !rows[*e].is_empty()).collect();
+        for &e in &selected {
+            self.experts[e].hits.fetch_add(rows[e].len() as u32, Ordering::Relaxed);
+        }
+        let (local, remote): (Vec<usize>, Vec<usize>) = selected.into_iter().partition(|e| self.experts[*e].dev.same_device(dev));
+        // Experts live on the layer's device or in system memory. Rows cross to system memory once, before the device
+        // experts are queued, so those experts compute while the device runs.
+        let host_x = if remote.is_empty() { None } else { Some(x.to_device(&Device::Cpu)?) };
+        if remote.iter().any(|e| !self.experts[*e].dev.is_cpu()) {
+            bail!("an expert is on neither the layer's device nor the CPU");
+        }
+        let apply = |out: Tensor, e: usize, src: &Tensor, target: &Device| -> Result<Tensor> {
+            let expert = &self.experts[e];
             let count = rows[e].len();
-            let src = if expert.dev.same_device(dev) {
-                &x
-            } else {
-                if on_host.is_none() {
-                    on_host = Some(x.to_device(&expert.dev)?);
-                }
-                on_host.as_ref().unwrap_or(&x)
-            };
             let all = count == t;
-            let xe = if all { src.clone() } else { src.index_select(&Tensor::from_vec(rows[e].clone(), count, &expert.dev)?, 0)? };
-            let w = Tensor::from_vec(std::mem::take(&mut weights[e]), (count, 1), &expert.dev)?;
-            let y = ffn(&expert.gate, &expert.up, &expert.down, &xe)?.broadcast_mul(&w)?.to_device(dev)?;
-            out = if all { (out + y)? } else { out.index_add(&Tensor::from_vec(std::mem::take(&mut rows[e]), count, dev)?, &y, 0)? };
+            let xe = if all { src.clone() } else { src.index_select(&Tensor::from_vec(rows[e].clone(), count, target)?, 0)? };
+            let w = Tensor::from_vec(weights[e].clone(), (count, 1), target)?;
+            let y = ffn(&expert.gate, &expert.up, &expert.down, &xe)?.broadcast_mul(&w)?;
+            Ok(if all { (out + y)? } else { out.index_add(&Tensor::from_vec(rows[e].clone(), count, target)?, &y, 0)? })
+        };
+        for &e in &local {
+            out = apply(out, e, &x, dev)?;
+        }
+        if let Some(host_x) = host_x {
+            // Host experts sum into one host tensor, uploaded once.
+            let mut host_out = Tensor::zeros((t, n_embd), host_x.dtype(), &Device::Cpu)?;
+            for &e in &remote {
+                host_out = apply(host_out, e, &host_x, &Device::Cpu)?;
+            }
+            out = (out + host_out.to_device(dev)?)?;
         }
         Ok(out.reshape((1, t, n_embd))?)
     }

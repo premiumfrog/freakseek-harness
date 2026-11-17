@@ -11,6 +11,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use candle_core::quantized::gguf_file::Content;
@@ -341,6 +342,18 @@ pub struct Model {
     profile: Option<PathBuf>,
     /// When set, [`Model::forward`] appends the last position's hidden-state norm after each layer.
     pub trace: Option<Vec<f32>>,
+    /// Wall-clock time per forward phase since the last [`Model::take_phases`].
+    phases: PhaseTimes,
+}
+
+/// Wall-clock time spent in each forward phase. On a GPU, kernels queue asynchronously, so a phase also absorbs the
+/// wait for earlier queued work at its first host read; the figures locate stalls rather than isolate kernel cost.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PhaseTimes {
+    pub attention: Duration,
+    pub recurrent: Duration,
+    pub ffn: Duration,
+    pub head: Duration,
 }
 
 fn md_u32(c: &Content, key: &str) -> Option<usize> {
@@ -665,7 +678,7 @@ impl Model {
                 *f /= s;
             }
         }
-        let mut model = Self { hp, embd, layers, out_norm, output, cache: CacheSet { layers: Vec::new(), len: 0, checkpoints: Vec::new() }, inv_freq, out_dev, placement: placement.clone(), profile, trace: None };
+        let mut model = Self { hp, embd, layers, out_norm, output, cache: CacheSet { layers: Vec::new(), len: 0, checkpoints: Vec::new() }, inv_freq, out_dev, placement: placement.clone(), profile, trace: None, phases: PhaseTimes::default() };
         model.cache = model.empty_cache();
         Ok(model)
     }
@@ -794,20 +807,13 @@ impl Model {
     }
 
     fn embed(&self, tokens: &[u32]) -> Result<Tensor> {
-        let (vocab, dim) = self.embd.shape().dims2()?;
-        let dtype = self.embd.dtype();
-        let row_bytes = dim / dtype.block_size() * dtype.type_size();
-        let data = self.embd.data()?;
-        let mut rows = Vec::with_capacity(tokens.len());
-        for &t in tokens {
-            let t = t as usize;
-            if t >= vocab {
-                bail!("token id {t} outside vocabulary of {vocab}");
-            }
-            let bytes = &data[t * row_bytes..(t + 1) * row_bytes];
-            rows.push(qtensor_from_ggml(dtype, bytes, vec![dim], &Device::Cpu)?.dequantize(&Device::Cpu)?);
+        let vocab = self.embd.shape().dims2()?.0;
+        if let Some(t) = tokens.iter().find(|t| **t as usize >= vocab) {
+            bail!("token id {t} outside vocabulary of {vocab}");
         }
-        Ok(Tensor::stack(&rows, 0)?.unsqueeze(0)?)
+        // One batched row lookup that dequantizes only the requested rows.
+        let ids = Tensor::new(tokens, &Device::Cpu)?;
+        Ok(self.embd.embedding(&ids)?.to_dtype(DType::F32)?.unsqueeze(0)?)
     }
 
     fn rope_tables(&self, start: usize, len: usize) -> Result<(Tensor, Tensor)> {
@@ -829,16 +835,19 @@ impl Model {
         let start = self.cached_len();
         let t = tokens.len();
         let (cos, sin) = self.rope_tables(start, t)?;
-        let mask = if t > 1 {
-            // Causal mask over [cached | new] keys for the new queries.
+        // Causal mask over [cached | new] keys for the new queries, built with tensor ops on the device that uses it.
+        let causal = |dev: &Device| -> Result<Option<Tensor>> {
+            if t < 2 {
+                return Ok(None);
+            }
             let total = start + t;
-            let m: Vec<f32> = (0..t)
-                .flat_map(|i| (0..total).map(move |j| if j > start + i { f32::NEG_INFINITY } else { 0.0 }))
-                .collect();
-            Some(Tensor::from_vec(m, (1, 1, t, total), &Device::Cpu)?)
-        } else {
-            None
+            let queries = Tensor::arange(start as u32, total as u32, dev)?.reshape((t, 1))?;
+            let keys = Tensor::arange(0u32, total as u32, dev)?.reshape((1, total))?;
+            let future = keys.broadcast_gt(&queries)?;
+            let blocked = Tensor::full(f32::NEG_INFINITY, (t, total), dev)?;
+            Ok(Some(future.where_cond(&blocked, &Tensor::zeros((t, total), DType::F32, dev)?)?.reshape((1, 1, t, total))?))
         };
+        let mask = causal(&Device::Cpu)?;
         let mut x = self.embed(tokens)?;
         let eps = self.hp.rms_eps as f32;
         // Host-built tables, copied once to the accelerator when the first offloaded layer needs them.
@@ -848,20 +857,27 @@ impl Model {
                 x = x.to_device(&layer.dev)?;
                 cos = cos.to_device(&layer.dev)?;
                 sin = sin.to_device(&layer.dev)?;
-                mask = mask.map(|m| m.to_device(&layer.dev)).transpose()?;
+                mask = causal(&layer.dev)?;
             }
             let h = candle_nn::ops::rms_norm(&x, &layer.attn_norm, eps)?;
+            let started = Instant::now();
             let y = match (&layer.mixer, cache) {
                 (Mixer::Attn(a), LayerCache::Kv(kv)) => attend(&self.hp, a, &h, kv, &cos, &sin, mask.as_ref())?,
                 (Mixer::Delta(d), LayerCache::Rec(state)) => d.forward(&h, state, &layer.dev)?,
                 _ => bail!("cache set does not belong to this model"),
             };
+            match layer.mixer {
+                Mixer::Attn(_) => self.phases.attention += started.elapsed(),
+                Mixer::Delta(_) => self.phases.recurrent += started.elapsed(),
+            }
             x = (x + y)?;
             let h = candle_nn::ops::rms_norm(&x, &layer.ffn_norm, eps)?;
+            let started = Instant::now();
             let y = match &layer.ffn {
                 Ffn::Dense { gate, up, down } => down.forward(&(candle_nn::ops::silu(&gate.forward(&h)?)? * up.forward(&h)?)?)?,
                 Ffn::Moe(m) => m.forward(&h, &layer.dev)?,
             };
+            self.phases.ffn += started.elapsed();
             x = (x + y)?;
             if let Some(trace) = &mut self.trace {
                 trace.push(x.narrow(1, t - 1, 1)?.to_dtype(DType::F32)?.sqr()?.sum_all()?.to_scalar::<f32>()?.sqrt());
@@ -871,14 +887,21 @@ impl Model {
         if t > 1 || self.cache.len % CHECKPOINT_INTERVAL == 0 {
             self.cache.checkpoint();
         }
+        let started = Instant::now();
         let last = x.narrow(1, t - 1, 1)?.to_device(&self.out_dev)?;
         let last = candle_nn::ops::rms_norm(&last, &self.out_norm, eps)?;
         let logits = self.output.forward(&last)?.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
+        self.phases.head += started.elapsed();
         // Sampling from non-finite logits repeats one token forever; fail the request instead.
         if self.trace.is_none() && logits.iter().any(|l| !l.is_finite()) {
             return Err(EngineError { code: "NUMERIC_FAILURE", message: format!("the model produced non-finite logits on {}; reload it on the CPU", self.placement.label()) }.into());
         }
         Ok(logits)
+    }
+
+    /// Phase times accumulated since the last call, which resets them.
+    pub fn take_phases(&mut self) -> PhaseTimes {
+        std::mem::take(&mut self.phases)
     }
 
     /// Vocabulary size of the output head.

@@ -29,6 +29,8 @@ impl Default for SamplingParams {
 pub struct Sampler {
     p: SamplingParams,
     rng: StdRng,
+    /// Candidate token ids, reused across tokens.
+    scratch: Vec<usize>,
 }
 
 impl Sampler {
@@ -38,7 +40,7 @@ impl Sampler {
             Some(s) => StdRng::seed_from_u64(s),
             None => StdRng::from_entropy(),
         };
-        Self { p, rng }
+        Self { p, rng, scratch: Vec::new() }
     }
 
     /// Choose the next token.
@@ -56,7 +58,10 @@ impl Sampler {
         if self.p.temperature <= 0.0 {
             return argmax(logits);
         }
-        let mut idx: Vec<usize> = (0..logits.len()).collect();
+        // The candidate index buffer is reused across tokens instead of allocating a vocabulary-sized vector each time.
+        let mut idx = std::mem::take(&mut self.scratch);
+        idx.clear();
+        idx.extend(0..logits.len());
         let k = if self.p.top_k == 0 { logits.len() } else { self.p.top_k.min(logits.len()) };
         idx.select_nth_unstable_by(k - 1, |&a, &b| logits[b].total_cmp(&logits[a]));
         idx.truncate(k);
@@ -77,13 +82,16 @@ impl Sampler {
         }
         let total: f32 = probs[..keep].iter().sum();
         let mut r = self.rng.gen::<f32>() * total;
+        let mut chosen = idx[keep - 1];
         for (j, &p) in probs[..keep].iter().enumerate() {
             r -= p;
             if r <= 0.0 {
-                return idx[j] as u32;
+                chosen = idx[j];
+                break;
             }
         }
-        idx[keep - 1] as u32
+        self.scratch = idx;
+        chosen as u32
     }
 }
 

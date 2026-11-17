@@ -91,6 +91,11 @@
     applyPatch: false
     readImage: !!js process.env.DSH_LOCAL_FULL_TOOLS === '1'
 
+# Session titles come from the first prompt's words: a model-written title is an extra
+# generation that a single local engine runs before the conversation's next step.
+- id: session-title-llm
+  disabled: true
+
 # Automatic compaction sized for local context windows (8k to 256k tokens): the
 # default 65,536-token headroom exceeds a 32k window and would leave no budget.
 # A conversation is summarized once it reaches 75% of the window, less the reply

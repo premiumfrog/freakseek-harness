@@ -11,7 +11,8 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              prefix: You are a helpful software engineer assistant.
+              # With dsh-offline, the persona names FreakSeek and keeps the agent in the session's working directory.
+              prefix: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true ? `You are FreakSeek, a coding agent running the {{model}} model locally on the user's computer. Work in the session's working directory: create, edit, and run files there. Ask the user before reading, creating, or changing anything outside it, and never inspect or modify FreakSeek's own installation.` : 'You are a helpful software engineer assistant.'"
               complete: true
               includeRuntimeContext: false
           - id: tool-fs
@@ -29,6 +30,13 @@
             config:
               - id: compaction-basic
                 name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  # With dsh-offline, compaction is sized for local windows of 8k to 256k tokens; the shared
+                  # 65,536-token headroom exceeds a 32k window and would leave no budget.
+                  thresholdRatio: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true ? 0.75 : undefined"
+                  headroomTokens: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true ? 2048 : undefined"
+                  maxTokens: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true ? 2048 : undefined"
+                  retainRatio: !!js "ctx.get('profileContext')?.startedBundles?.includes('@deepseek-ai/dsh-offline') === true ? 0.2 : undefined"
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
           - id: persistent-shell

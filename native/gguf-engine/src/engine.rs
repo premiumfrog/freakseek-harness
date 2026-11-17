@@ -153,6 +153,26 @@ pub struct Outcome {
     pub prompt_tokens_per_second: f64,
     /// Generated tokens per second; 0 when none were generated.
     pub tokens_per_second: f64,
+    /// Milliseconds by forward phase and in sampling, prefill and generation together.
+    pub phase_ms: PhaseMs,
+}
+
+/// Milliseconds spent per phase of one generation; see [`crate::model::PhaseTimes`] for how GPU waits are counted.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhaseMs {
+    pub attention: u64,
+    pub recurrent: u64,
+    pub ffn: u64,
+    pub head: u64,
+    pub sampler: u64,
+}
+
+impl PhaseMs {
+    fn from(p: crate::model::PhaseTimes, sampler: Duration) -> Self {
+        let ms = |d: Duration| d.as_millis() as u64;
+        Self { attention: ms(p.attention), recurrent: ms(p.recurrent), ffn: ms(p.ffn), head: ms(p.head), sampler: ms(sampler) }
+    }
 }
 
 impl Outcome {
@@ -167,7 +187,13 @@ impl Outcome {
             decode_ms: decode.as_millis() as u64,
             prompt_tokens_per_second: rate(prompt_tokens - cached_tokens, prefill),
             tokens_per_second: rate(completion_tokens, decode),
+            phase_ms: PhaseMs::default(),
         }
+    }
+
+    fn with_phases(mut self, phases: PhaseMs) -> Self {
+        self.phase_ms = phases;
+        self
     }
 }
 
@@ -467,6 +493,8 @@ impl Engine {
         let shared = self.model.truncate(shared);
         self.cached.truncate(shared);
         emit(Event::Start { prompt_tokens: prompt.len(), cached_tokens: shared, opens_reasoning: rendered.opens_reasoning });
+        self.model.take_phases();
+        let mut sampling = Duration::ZERO;
         let prefill_started = Instant::now();
         let mut logits = Vec::new();
         for chunk in prompt[shared..].chunks(PREFILL_CHUNK) {
@@ -502,7 +530,9 @@ impl Engine {
             if let Some(guard) = &guard {
                 guard.constrain(&mut logits, &|id| self.tok.token_bytes(id), &|id| self.tok.eog.contains(&id));
             }
+            let sample_started = Instant::now();
             let next = sampler.sample(&mut logits, &self.cached);
+            sampling += sample_started.elapsed();
             produced += 1;
             if self.tok.eog.contains(&next) {
                 break Finish::Stop;
@@ -550,7 +580,8 @@ impl Engine {
         if !pending.is_empty() && finish != Finish::Cancelled {
             emit(Event::Delta(pending));
         }
-        Ok(Outcome::new(finish, prompt.len(), shared, produced, prefill, decode_started.elapsed()))
+        Ok(Outcome::new(finish, prompt.len(), shared, produced, prefill, decode_started.elapsed())
+            .with_phases(PhaseMs::from(self.model.take_phases(), sampling)))
     }
 
     /// Wire label of the device running the offloaded layers, or `cpu`.

@@ -126,6 +126,14 @@ export interface EngineOutcome {
   readonly promptTokensPerSecond: number
   /** Generated tokens per second; 0 when none were generated. */
   readonly tokensPerSecond: number
+  /** Wall-clock milliseconds by forward phase and in sampling; absent from engines that predate it. */
+  readonly phaseMs?: {
+    readonly attention: number
+    readonly recurrent: number
+    readonly ffn: number
+    readonly head: number
+    readonly sampler: number
+  }
 }
 
 /** Placement and timing of the loaded model, for configuration surfaces. */

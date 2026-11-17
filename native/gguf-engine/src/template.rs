@@ -107,6 +107,9 @@ impl ChatTemplate {
             bos_token => self.bos.clone(),
             eos_token => self.eos.clone(),
             enable_thinking => thinking.unwrap_or(true),
+            // Earlier turns keep their reasoning, so each request's prompt extends the previous one byte for byte and the
+            // engine reuses its cache; templates without the switch ignore it.
+            preserve_thinking => true,
         };
         let text = if self.has_template {
             match self.env.get_template("model")?.render(&ctx) {

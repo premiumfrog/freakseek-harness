@@ -96,8 +96,18 @@ fn silu(x: f32) -> f32 {
     x / (1.0 + (-x).exp())
 }
 
+/// Dot product with eight independent accumulators, which the compiler maps to SIMD lanes; a single running sum
+/// stays scalar because floating-point addition is not reassociated.
 fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum()
+    let mut acc = [0f32; 8];
+    let (ca, cb) = (a.chunks_exact(8), b.chunks_exact(8));
+    let tail: f32 = ca.remainder().iter().zip(cb.remainder()).map(|(x, y)| x * y).sum();
+    for (x, y) in ca.zip(cb) {
+        for i in 0..8 {
+            acc[i] += x[i] * y[i];
+        }
+    }
+    acc.iter().sum::<f32>() + tail
 }
 
 impl DeltaNet {

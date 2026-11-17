@@ -259,6 +259,11 @@ fn selftest(path: &std::path::Path) -> i32 {
 }
 
 fn main() {
+    // Inference threads default to physical cores: SMT siblings share the vector units the matrix kernels saturate.
+    // Candle's kernels already default to this; the shared pool that runs the recurrence follows it.
+    if std::env::var_os("RAYON_NUM_THREADS").is_none() {
+        std::env::set_var("RAYON_NUM_THREADS", num_cpus::get_physical().max(1).to_string());
+    }
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {

@@ -411,6 +411,7 @@ dependencies = [
  "fancy-regex 0.14.0",
  "minijinja",
  "minijinja-contrib",
+ "num_cpus",
  "rand 0.8.8",
  "rayon",
  "serde",

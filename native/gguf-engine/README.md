@@ -88,6 +88,7 @@ Prefill runs in chunks of 256 tokens with a causal mask, which bounds the attent
 
 - GPU offload covers CUDA only; candle's Metal backend is not enabled.
 - The forward-pass parity tests run on the CPU; CI does not exercise CUDA kernels.
-- The KV cache is F32, so long windows on large models need substantial memory.
-- Mixture-of-experts, Gemma, Phi, and other architectures are not implemented; `inspect` reports them as unsupported.
+- The KV cache is F16 on a GPU and F32 on the CPU, so long windows on large models need substantial system memory.
+- Gemma, Phi, DeepSeek MoE, and other architectures are not implemented; `inspect` reports them as unsupported.
+- Gated delta-net recurrences run on the CPU, so a recurrent layer placed on a GPU copies its projections to the host each step.
 - One process holds one model and runs one generation at a time.

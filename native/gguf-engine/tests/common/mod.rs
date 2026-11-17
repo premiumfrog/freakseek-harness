@@ -29,7 +29,10 @@ fn ones_ish(n: usize) -> QTensor {
 
 /// Write a random model of `arch` to a temporary path.
 pub fn write_model(arch: &str, tied: bool, tokenizer: bool) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("dsh-gguf-ref-{}-{arch}-{tied}-{tokenizer}", std::process::id()));
+    // A per-call suffix: tests run concurrently in one process and each deletes its directory when done.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("dsh-gguf-ref-{}-{n}-{arch}-{tied}-{tokenizer}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("model.gguf");
     let k = |s: &str| format!("{arch}.{s}");
