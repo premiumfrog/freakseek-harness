@@ -6,7 +6,7 @@ name: FreakSeek · CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
     paths-ignore: ['**.md', 'docs/**', 'branding/**']
   pull_request:
     paths-ignore: ['**.md', 'docs/**', 'branding/**']

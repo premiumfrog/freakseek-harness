@@ -12,7 +12,7 @@ on:
       tag:
         description: Release tag to create or update
         type: string
-        default: freakseek-v0.3.0
+        default: freakseek-v0.4.1
         required: true
       compute_cap:
         description: Lowest CUDA compute capability the kernels target (75 = RTX 20-series; newer GPUs JIT the PTX)
